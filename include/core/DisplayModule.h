@@ -4,7 +4,7 @@
 #include "config.h"
 #include <Adafruit_SSD1306.h>
 #include <WiFi.h>
-#include "PrayerData.h" 
+#include "data/PrayerData.h"
 #include "SlideAnimUtil.h"
 
 extern Adafruit_SSD1306 display;
@@ -22,7 +22,14 @@ enum ScreenLayout {
   // LAYOUT_FUTURE_X     // Ruang layout masa hadapan...
 };
 
-ScreenLayout activeLayout = LAYOUT_HOME_SLIDE; // ← Tukar di sini
+ScreenLayout activeLayout = LAYOUT_HOME_SLIDE; // Lalai; boleh ditimpa /config/display.json
+
+inline bool setActiveLayoutByIndex(int idx) {
+  if (idx < (int)LAYOUT_HOME_STANDARD || idx > (int)LAYOUT_TAKWIM)
+    return false;
+  activeLayout = static_cast<ScreenLayout>(idx);
+  return true;
+}
 
 // ================================================================
 // STRUCTS
@@ -87,6 +94,24 @@ void initDisplay() {
     Serial.println(F("SSD1306 failed"));
   display.clearDisplay();
   display.display();
+}
+
+// Status bar utama: papar IP STA atau IP hotspot setup (max ~11 aksara kerana lebar OLED)
+inline void printOledWifiIpStatus() {
+  String s;
+  if (WiFi.status() == WL_CONNECTED)
+    s = WiFi.localIP().toString();
+  else {
+    wifi_mode_t m = WiFi.getMode();
+    if (m == WIFI_MODE_AP || m == WIFI_MODE_APSTA)
+      s = WiFi.softAPIP().toString();
+    else
+      s = "WiFi:--";
+  }
+  const int maxCh = 11;
+  if ((int)s.length() > maxCh)
+    s = s.substring((unsigned)((int)s.length() - maxCh));
+  display.print(s);
 }
 
 // ================================================================
@@ -266,8 +291,8 @@ void runOledHomeStandard(DateTime now) {
 
   display.drawLine(0, 54, 128, 54, SSD1306_WHITE);
   display.setCursor(0, 57);
-  display.print(WiFi.status() == WL_CONNECTED ? "WIFI:OK" : "WIFI:ER");
-  display.setCursor(75, 57);
+  printOledWifiIpStatus();
+  display.setCursor(68, 57);
   display.print(audioStatus);
 
   display.display();
@@ -373,8 +398,8 @@ void runOledHomeFlipFlop(DateTime now) {
 
   display.drawLine(0, 54, 128, 54, SSD1306_WHITE);
   display.setCursor(0, 57);
-  display.print(WiFi.status() == WL_CONNECTED ? "WIFI:OK" : "WIFI:ER");
-  display.setCursor(75, 57);
+  printOledWifiIpStatus();
+  display.setCursor(68, 57);
   display.print(audioStatus);
 
   display.display();

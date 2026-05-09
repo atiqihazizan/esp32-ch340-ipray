@@ -9,6 +9,9 @@
 extern Audio  audio;
 extern String audioStatus;
 
+// Kod bahasa TTS masa jalan (boleh diubah dari /config/audio.json)
+char activeTtsLang[12] = {0};
+
 #define RAM_BUF_SIZE    (8 * 1024)
 #define PSRAM_BUF_SIZE  (psramFound() ? (32 * 1024) : 0)
 
@@ -36,6 +39,15 @@ void stopAndFlushAudio() {
   audioStatus = "IDLE";
 }
 
+static inline void copyTtsLangBuf(const char *src) {
+  if (!src) {
+    activeTtsLang[0] = '\0';
+    return;
+  }
+  strncpy(activeTtsLang, src, sizeof(activeTtsLang) - 1);
+  activeTtsLang[sizeof(activeTtsLang) - 1] = '\0';
+}
+
 // ================================================================
 // TASK CORE 0 — route ikut prefix
 // ================================================================
@@ -54,7 +66,7 @@ void AudioLoopTask(void *pvParameters) {
         // ── Selain itu = TTS (perlu WiFi) ──
         else {
           if (WiFi.status() == WL_CONNECTED) {
-            audio.connecttospeech(ttsText, TTS_LANG);
+            audio.connecttospeech(ttsText, activeTtsLang);
           } else {
             Serial.printf("Audio: skip TTS (no WiFi): %s\n", ttsText);
           }
@@ -66,7 +78,19 @@ void AudioLoopTask(void *pvParameters) {
   }
 }
 
+void applyAudioRuntimeConfig(int volume, const char *lang) {
+  if (volume < 0)
+    volume = 0;
+  if (volume > MAX_VOL)
+    volume = MAX_VOL;
+  audio.setVolume(volume);
+  if (lang && lang[0] != '\0')
+    copyTtsLangBuf(lang);
+}
+
 void initAudio() {
+  copyTtsLangBuf(TTS_LANG);
+
   ttsQueue = xQueueCreate(TTS_QUEUE_DEPTH, TTS_TEXT_LEN);
   if (!ttsQueue)
     Serial.println(F("Audio: GAGAL cipta ttsQueue!"));

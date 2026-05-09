@@ -188,4 +188,18 @@ bool initTakwim(DateTime now) {
   return loadTakwimForDate(now.day(), now.month(), now.year());
 }
 
+// Kosongkan cache (selepas muat turun fail takwim baharu daripada HTTP)
+inline void invalidateTakwimCache() {
+  todayTakwim.valid = false;
+  zoneName[0]       = '\0';
+}
+
+inline const char *takwimZoneNameStr() {
+  return zoneName;
+}
+
+inline bool takwimTodayValid() {
+  return todayTakwim.valid;
+}
+
 #endif

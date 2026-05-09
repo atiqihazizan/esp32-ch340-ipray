@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Set Jam</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:520px;margin:12px auto;padding:0 8px;background:#111;color:#eee}
+h2{border-bottom:1px solid #444;padding-bottom:4px;font-size:1.1rem}
+label{display:block;margin:6px 0 2px;font-size:14px}
+input,select{width:100%;padding:8px;background:#222;border:1px solid #555;color:#eee;box-sizing:border-box}
+.row{display:flex;gap:10px;margin:8px 0}
+.btn{background:#264;padding:10px;border:none;color:#fff;width:100%;cursor:pointer;margin:4px 0;border-radius:4px;font-size:15px}
+.btn.secondary{background:#444}
+.btn:disabled{background:#333;color:#777;cursor:not-allowed}
+.chk{margin-right:8px}
+#msg,#takStatus{white-space:pre-wrap;color:#fc8;font-size:13px;margin:8px 0;min-height:1.2em}
+#takStatus{color:#9d8;}
+pre{font-size:12px;background:#1a1a1a;padding:8px;border-radius:4px;overflow:auto}
+code{font-size:12px;color:#adf}
+.p{color:#aaa;font-size:13px;line-height:1.4}
+</style>
+</head>
+<body>
+<h1 style="font-size:1.2rem;margin:8px 0">Jam pintar — konfigurasi</h1>
+<p class="p">Sambungan: letak dalam rangkaian yang sama seperti jam (STA atau hotspot <strong>MyClock-Setup</strong>).</p>
+<p class="p">Selepas kemas kini Wi‑Fi atau reboot, penyemak perlu tunggu but semula bersambung.</p>
+
+<h2>Status</h2>
+<button type="button" class="btn secondary" onclick="loadStatus()">Segar status</button>
+<pre id="st"></pre>
+
+<h2>Wi‑Fi</h2>
+<label>SSID</label><input id="wssid">
+<label>Kata laluan</label><input id="wpass" type="password" autocomplete="current-password" placeholder="(kosong = jangan tukar kata laluan tersimpan)">
+<label>mDNS hostname (tanpa .local)</label><input id="whost">
+<button type="button" class="btn" onclick="saveWifi()">Simpan Wi‑Fi (reboot)</button>
+
+<h2>Takwim</h2>
+<label>URL muat turun (template) — guna <code>%ZONE%</code> atau <code>%s</code></label>
+<input id="turl" placeholder="https://…">
+<label>Zon (browser yang fetch dari JAKIM)</label>
+<select id="tzone"></select>
+
+<input type="hidden" id="takwimContent">
+
+<button type="button" class="btn secondary" onclick="saveTak()">Simpan URL/zon (config sahaja)</button>
+<button type="button" class="btn secondary" onclick="fetchTakwim()">1. Ambil takwim dari JAKIM (browser)</button>
+<button type="button" class="btn" onclick="uploadTakwim()" id="btnUpload" disabled>2. Upload ke jam</button>
+<div id="takStatus"></div>
+
+<h2>Paparan & audio</h2>
+<label>Layout</label>
+<select id="lay">
+<option value="0">0 Standard</option>
+<option value="1">1 Prayer</option>
+<option value="2">2 FlipFlop</option>
+<option value="3">3 Slide</option>
+<option value="4">4 Takwim</option>
+</select>
+<label>Volume 0–21</label><input id="vol" type="number" min="0" max="21">
+<label>Bahasa TTS</label><input id="lang" placeholder="en atau ms">
+<button type="button" class="btn" onclick="saveDisp()">Simpan paparan (langsung aktif)</button>
+<button type="button" class="btn secondary" onclick="saveAud()">Simpan audio (langsung aktif)</button>
+
+<h2>Pengumuman</h2>
+<label><input id="annp" type="checkbox" class="chk">Solat</label>
+<label><input id="annc" type="checkbox" class="chk">Jadual khas</label>
+<label><input id="annm" type="checkbox" class="chk">Setiap minit</label>
+<label><input id="annq" type="checkbox" class="chk">Suku jam</label>
+<button type="button" class="btn" onclick="saveAnn()">Simpan pengumuman</button>
+
+<h2>Tindakan</h2>
+<button type="button" class="btn secondary" onclick="doNtp()">Sync NTP (perlukan STA)</button>
+<button type="button" class="btn secondary" onclick="doRb()">Reboot</button>
+
+<div id="msg"></div>
+
+<script>
+// ================================================================
+// HIJRI_DATA - hardcoded constant (sama macam takwim.txt sedia ada)
+// ================================================================
+const HIJRI_DATA = "2B75A5B654A76A55D5AA5CA56DD495DA525DAA4DD5AA6A95B652576A4B76C93665ABAC56D94A5DA92DD525BBA49BB255D52A6DA5B65497F4926ED25669ABB495DA525DD22BBA495BA9ABB4955A4B6DA936E916EDA4AED4966A4BB5A5DAA49BB493BA525BAA4DB5AA6A556DD256EA4A6DA92ED5AA6A55B54A5BA92BB525BB549BAA55D52A6DA5AED496EC925DD255D92A6D95B6525BB24B7A493729";
+
+// ================================================================
+// Senarai zon (dedupe + gabung lokasi setiap kod)
+// ================================================================
+const ZONES = [
+  { code: "JHR01", state: "Johor", locations: "Pulau Aur, Pemanggil" },
+  { code: "JHR02", state: "Johor", locations: "Kota Tinggi, Mersing, Johor Bahru" },
+  { code: "JHR03", state: "Johor", locations: "Kluang, Pontian" },
+  { code: "JHR04", state: "Johor", locations: "Batu Pahat, Muar, Segamat, Gemas" },
+  { code: "KDH01", state: "Kedah", locations: "Kota Setar, Kubang Pasu, Pokok Sena" },
+  { code: "KDH02", state: "Kedah", locations: "Pendang, Kuala Muda, Yan" },
+  { code: "KDH03", state: "Kedah", locations: "Padang Terap, Sik" },
+  { code: "KDH04", state: "Kedah", locations: "Baling" },
+  { code: "KDH05", state: "Kedah", locations: "Kulim, Bandar Bahru" },
+  { code: "KDH06", state: "Kedah", locations: "Langkawi" },
+  { code: "KDH07", state: "Kedah", locations: "Gunung Jerai" },
+  { code: "KTN01", state: "Kelantan", locations: "Kota Bahru, Bachok, Pasir Puteh, Tumpat, Pasir Mas, Tanah Merah, Machang, Kuala Krai, Mukim Chiku" },
+  { code: "KTN02", state: "Kelantan", locations: "Jeli, Gua Musang, Mukim Galas, Bertam" },
+  { code: "MLK01", state: "Melaka", locations: "Bandar Melaka, Alor Gajah, Jasin, Masjid Tanah, Merlimau, Nyalas" },
+  { code: "NGS01", state: "Negeri Sembilan", locations: "Jempol, Tampin" },
+  { code: "NGS02", state: "Negeri Sembilan", locations: "Kuala Pilah, Jelebu, Rembau" },
+  { code: "NGS03", state: "Negeri Sembilan", locations: "Port Dickson, Seremban" },
+  { code: "PHG01", state: "Pahang", locations: "Pulau Tioman" },
+  { code: "PHG02", state: "Pahang", locations: "Kuantan, Pekan, Rompin, Muadzam Shah" },
+  { code: "PHG03", state: "Pahang", locations: "Maran, Chenor, Temerloh, Bera, Jerantut, Jengka" },
+  { code: "PHG04", state: "Pahang", locations: "Bentong, Raub, Kuala Lipis" },
+  { code: "PHG05", state: "Pahang", locations: "Genting Sempah, Janda Baik, Bukit Tinggi" },
+  { code: "PHG06", state: "Pahang", locations: "Bukit Fraser, Genting Highlands, Cameron Highlands" },
+  { code: "PRK01", state: "Perak", locations: "Tapah, Slim River, Tanjung Malim" },
+  { code: "PRK02", state: "Perak", locations: "Ipoh, Batu Gajah, Kampar, Sungai Siput, Kuala Kangsar" },
+  { code: "PRK03", state: "Perak", locations: "Pengkalan Hulu, Grik, Lenggong" },
+  { code: "PRK04", state: "Perak", locations: "Temengor, Belum" },
+  { code: "PRK05", state: "Perak", locations: "Teluk Intan, Bagan Datuk, Kampung Gajah, Seri Iskandar, Beruas, Parit, Lumut, Sitiawan, Pulau Pangkor" },
+  { code: "PRK06", state: "Perak", locations: "Selama, Taiping, Bagan Serai, Parit Buntar" },
+  { code: "PRK07", state: "Perak", locations: "Bukit Larut" },
+  { code: "PLS01", state: "Perlis", locations: "Kangar, Padang Besar, Arau" },
+  { code: "PNG01", state: "Pulau Pinang", locations: "Pulau Pinang" },
+  { code: "SBH01", state: "Sabah", locations: "Sandakan Timur, Bukit Garam, Semawang, Temanggong, Tambisan, Sukau" },
+  { code: "SBH02", state: "Sabah", locations: "Pinangah, Terusan, Beluran, Kuamut, Telupid, Sandakan Barat" },
+  { code: "SBH03", state: "Sabah", locations: "Lahad Datu, Kunak, Silabukan, Tungku, Sahabat, Semporna, Tawau Timur" },
+  { code: "SBH04", state: "Sabah", locations: "Bandar Tawau, Balong, Merotai, Kalabakan, Tawau Barat" },
+  { code: "SBH05", state: "Sabah", locations: "Kudat, Kota Marudu, Pitas, Pulau Banggi" },
+  { code: "SBH06", state: "Sabah", locations: "Gunung Kinabalu" },
+  { code: "SBH07", state: "Sabah", locations: "Papar, Ranau, Kota Belud, Tuaran, Penampang, Kota Kinabalu, Putatan, Pantai Barat" },
+  { code: "SBH08", state: "Sabah", locations: "Pensiangan, Keningau, Tambunan, Nabawan" },
+  { code: "SBH09", state: "Sabah", locations: "Sipitang, Membakut, Beaufort, Kuala Penyu, Weston, Tenom, Long Pa Sia" },
+  { code: "SWK01", state: "Sarawak", locations: "Limbang, Sundar, Terusan, Lawas" },
+  { code: "SWK02", state: "Sarawak", locations: "Niah, Belaga, Sibuti, Miri, Bekenu, Marudi" },
+  { code: "SWK03", state: "Sarawak", locations: "Song, Balingian, Sebauh, Bintulu, Tatau, Kapit" },
+  { code: "SWK04", state: "Sarawak", locations: "Igan, Kanowit, Sibu, Dalat, Oya" },
+  { code: "SWK05", state: "Sarawak", locations: "Belawai, Matu, Daro, Sarikei, Julau, Bitangor, Rajang" },
+  { code: "SWK06", state: "Sarawak", locations: "Kabong, Lingga, Sri Aman, Engkelili, Betong, Spaoh, Pusa, Saratok, Roban, Debak" },
+  { code: "SWK07", state: "Sarawak", locations: "Samarahan, Simunjan, Serian, Sebuyau, Meludam" },
+  { code: "SWK08", state: "Sarawak", locations: "Kuching, Bau, Lundu, Sematan" },
+  { code: "SWK09", state: "Sarawak", locations: "Zon Khas" },
+  { code: "SGR01", state: "Selangor", locations: "Gombak, Hulu Selangor, Rawang, Hulu Langat, Sepang, Petaling, Shah Alam" },
+  { code: "SGR02", state: "Selangor", locations: "Sabak Bernam, Kuala Selangor" },
+  { code: "SGR03", state: "Selangor", locations: "Klang, Kuala Langat" },
+  { code: "TRG01", state: "Terengganu", locations: "Kuala Terengganu, Marang, Kuala Nerus" },
+  { code: "TRG02", state: "Terengganu", locations: "Besut, Setiu" },
+  { code: "TRG03", state: "Terengganu", locations: "Hulu Terengganu" },
+  { code: "TRG04", state: "Terengganu", locations: "Kemaman, Dungun" },
+  { code: "WLY01", state: "Kuala Lumpur, Putrajaya", locations: "Kuala Lumpur, Putrajaya" },
+  { code: "WLY02", state: "Labuan", locations: "Labuan" }
+];
+
+// ================================================================
+// HELPERS
+// ================================================================
+const pad2 = (n) => String(n).padStart(2, '0');
+
+const MON_MAP = {
+  Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6,
+  Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12,
+};
+
+// "06:14:00" → "6:14"  (drop seconds, no leading zero on hour)
+function trimTime(t) {
+  const parts = t.split(':');
+  return parseInt(parts[0], 10) + ':' + parts[1];
+}
+
+// "01-Jan-2026" → "01-01-2026"
+function formatGregorian(s) {
+  const [d, mon, y] = s.split('-');
+  return `${pad2(d)}-${pad2(MON_MAP[mon])}-${y}`;
+}
+
+// "1447-07-11" → "11-07-1447"
+function formatHijri(s) {
+  const [y, m, d] = s.split('-');
+  return `${pad2(d)}-${pad2(m)}-${y}`;
+}
+
+// Build header line "WLY01 - Kuala Lumpur, Putrajaya"
+function buildHeader(zoneCode) {
+  const z = ZONES.find((x) => x.code === zoneCode);
+  if (!z) return zoneCode;
+  return `${zoneCode} - ${z.locations}`;
+}
+
+// JSON JAKIM → text format takwim.txt
+function jakimJsonToTakwimText(zoneCode, json) {
+  if (!json || !Array.isArray(json.prayerTime) || json.prayerTime.length === 0) {
+    throw new Error('JSON tidak mengandungi prayerTime');
+  }
+
+  const out = [];
+  out.push(buildHeader(zoneCode));
+  out.push('HIJRI_DATA=' + HIJRI_DATA);
+
+  for (const e of json.prayerTime) {
+    const date  = formatGregorian(e.date);
+    const hijri = formatHijri(e.hijri);
+    const times = [
+      trimTime(e.fajr),
+      trimTime(e.syuruk),
+      trimTime(e.dhuhr),
+      trimTime(e.asr),
+      trimTime(e.maghrib),
+      trimTime(e.isha)
+    ].join('\t');
+    out.push(`${date} ${hijri}\t${times}`);
+  }
+
+  return out.join('\n') + '\n';
+}
+
+// ================================================================
+// UI helpers
+// ================================================================
+function postJson(url, obj) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+    body: JSON.stringify(obj || {}),
+  });
+}
+function showMsg(t) { document.getElementById('msg').textContent = t; }
+function setTakStatus(t) { document.getElementById('takStatus').textContent = t; }
+
+async function reloadCfgJikaOk(teksBalas) {
+  try {
+    const j = JSON.parse(teksBalas);
+    if (!j || !j.ok) return;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await loadCfg();
+  } catch (e) { /* abaikan */ }
+}
+
+// Populate dropdown zon
+function populateZoneSelect(currentZone) {
+  const sel = document.getElementById('tzone');
+  sel.innerHTML = '';
+
+  // Group by state for visual clarity
+  const byState = {};
+  for (const z of ZONES) {
+    if (!byState[z.state]) byState[z.state] = [];
+    byState[z.state].push(z);
+  }
+
+  for (const state of Object.keys(byState)) {
+    const og = document.createElement('optgroup');
+    og.label = state;
+    for (const z of byState[state]) {
+      const op = document.createElement('option');
+      op.value = z.code;
+      op.textContent = `${z.code} — ${z.locations}`;
+      if (z.code === currentZone) op.selected = true;
+      og.appendChild(op);
+    }
+    sel.appendChild(og);
+  }
+}
+
+// ================================================================
+// Load
+// ================================================================
+async function loadStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const j = await r.json();
+    document.getElementById('st').textContent = JSON.stringify(j, null, 2);
+    showMsg('');
+  } catch (e) { showMsg(String(e)); }
+}
+
+async function loadCfg() {
+  try {
+    const r = await fetch('/api/config');
+    const j = await r.json();
+    document.getElementById('wssid').value = j.wifi.ssid || '';
+    document.getElementById('whost').value = j.wifi.hostname || '';
+    document.getElementById('wpass').value = '';
+    document.getElementById('turl').value = j.takwim.url || '';
+    populateZoneSelect(j.takwim.zone || 'PNG01');
+    document.getElementById('lay').value = String(j.display.layout ?? 3);
+    document.getElementById('vol').value = j.audio.volume ?? 21;
+    document.getElementById('lang').value = j.audio.tts_lang || '';
+    document.getElementById('annp').checked = !!j.announce.prayer;
+    document.getElementById('annc').checked = !!j.announce.custom;
+    document.getElementById('annm').checked = !!j.announce.every_minute;
+    document.getElementById('annq').checked = !!j.announce.every_quarter;
+    showMsg('');
+  } catch (e) {
+    populateZoneSelect('PNG01');
+    showMsg('config: ' + e);
+  }
+}
+
+// ================================================================
+// Wi-Fi
+// ================================================================
+async function saveWifi() {
+  const r = await postJson('/api/config/wifi', {
+    ssid: document.getElementById('wssid').value,
+    password: document.getElementById('wpass').value,
+    hostname: document.getElementById('whost').value
+  });
+  showMsg('Wi‑Fi: HTTP ' + r.status + ' — ' + await r.text());
+}
+
+// ================================================================
+// Takwim — 3 langkah
+// ================================================================
+async function saveTak() {
+  const r = await postJson('/api/config/takwim', {
+    url: document.getElementById('turl').value,
+    zone: document.getElementById('tzone').value
+  });
+  const t = await r.text();
+  showMsg(t);
+  await reloadCfgJikaOk(t);
+}
+
+// (1) Browser fetch dari JAKIM → format → letak dalam hidden input
+async function fetchTakwim() {
+  const zone = document.getElementById('tzone').value;
+  if (!zone) { setTakStatus('✗ Sila pilih zon dahulu'); return; }
+
+  const tmpl = document.getElementById('turl').value;
+  if (!tmpl) { setTakStatus('✗ URL template kosong'); return; }
+
+  const url = tmpl.replace('%ZONE%', zone).replace('%s', zone);
+
+  setTakStatus('⏳ Memuat turun dari JAKIM…');
+  document.getElementById('btnUpload').disabled = true;
+  document.getElementById('takwimContent').value = '';
+
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+
+    const txt = jakimJsonToTakwimText(zone, j);
+    document.getElementById('takwimContent').value = txt;
+
+    const lines = txt.split('\n').length - 1;
+    setTakStatus(`✓ Siap: ${j.prayerTime.length} hari (${lines} baris, ${txt.length} bait). Tekan butang upload.`);
+    document.getElementById('btnUpload').disabled = false;
+  } catch (e) {
+    setTakStatus('✗ Gagal: ' + e.message + ' (CORS? rangkaian? URL?)');
+  }
+}
+
+// (2) Upload teks dalam hidden input → ESP32
+async function uploadTakwim() {
+  const txt = document.getElementById('takwimContent').value;
+  if (!txt) { setTakStatus('✗ Fetch dahulu sebelum upload'); return; }
+
+  setTakStatus('⏳ Upload ke jam… (tunggu sehingga selesai)');
+  document.getElementById('btnUpload').disabled = true;
+
+  try {
+    const r = await fetch('/api/action/upload_takwim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain; charset=UTF-8' },
+      body: txt
+    });
+    const t = await r.text();
+    setTakStatus(`HTTP ${r.status} — ${t}`);
+    if (r.ok) {
+      // Refresh status untuk lihat takwim_zon baru
+      setTimeout(() => loadStatus(), 600);
+    }
+  } catch (e) {
+    setTakStatus('✗ Upload gagal: ' + e.message);
+  } finally {
+    document.getElementById('btnUpload').disabled = false;
+  }
+}
+
+// ================================================================
+// Display / Audio / Announce
+// ================================================================
+async function saveDisp() {
+  const r = await postJson('/api/config/display', {
+    layout: parseInt(document.getElementById('lay').value, 10)
+  });
+  const t = await r.text();
+  showMsg(t);
+  await reloadCfgJikaOk(t);
+}
+async function saveAud() {
+  const r = await postJson('/api/config/audio', {
+    volume: parseInt(document.getElementById('vol').value, 10),
+    tts_lang: document.getElementById('lang').value
+  });
+  const t = await r.text();
+  showMsg(t);
+  await reloadCfgJikaOk(t);
+}
+async function saveAnn() {
+  const r = await postJson('/api/config/announce', {
+    prayer: document.getElementById('annp').checked,
+    custom: document.getElementById('annc').checked,
+    every_minute: document.getElementById('annm').checked,
+    every_quarter: document.getElementById('annq').checked
+  });
+  const t = await r.text();
+  showMsg(t);
+  await reloadCfgJikaOk(t);
+}
+
+// ================================================================
+// Tindakan
+// ================================================================
+async function doNtp() {
+  const r = await postJson('/api/action/ntp_sync', {});
+  showMsg('NTP HTTP ' + r.status + ' — ' + await r.text());
+}
+async function doRb() {
+  await postJson('/api/action/reboot', {});
+  showMsg('Reboot diminta…');
+}
+
+loadCfg().then(loadStatus);
+</script>
+</body>
+</html>

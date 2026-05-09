@@ -1,5 +1,6 @@
 #include "Audio.h"
 #include "config.h"
+#include "data/ConfigModule.h"
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 #include <RTClib.h>
@@ -17,12 +18,16 @@ String audioStatus = "IDLE";
 // ================================================================
 // MODUL
 // ================================================================
-#include "AnnounceModule.h"
-#include "AudioModule.h"
-#include "BeepModule.h"
-#include "DisplayModule.h"
-#include "TimeModule.h"
-#include "TakwimModule.h"
+#include "logic/AnnounceModule.h"
+#include "core/AudioModule.h"
+#include "logic/BeepModule.h"
+#include "core/DisplayModule.h"
+#include "network/WiFiManager.h"
+#include "core/TimeModule.h"
+#include "data/TakwimModule.h"
+#include "network/WebServer.h"
+
+bool clockWebRebootSoon = false;
 
 // ================================================================
 // Pengumuman TTS pembuka masa boot (Perlukan WiFi untuk Google TTS)
@@ -71,24 +76,18 @@ void setup() {
   delay(200);
   Serial.println(F("\n=== BOOT ==="));
 
+  if (!initConfigStorage()) {
+    Serial.println(F("Boot: SPIFFS gagal — /config tidak tersedia, guna config.h sahaja "
+                     "sehingga SPIFFS OK"));
+  }
+
   initDisplay();
   initTime();
 
   showSplashLogo(2000);
 
-  // WiFi
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  unsigned long wifiStart = millis();
-  while (WiFi.status() != WL_CONNECTED) {
-    if (millis() - wifiStart > 15000) {
-      showWiFiError();
-      delay(2000);
-      break;
-    }
-    int progress = (int)((millis() - wifiStart) * 90 / 15000) + 5;
-    showBootStatus("Connecting WiFi...", progress);
-    delay(100);
-  }
+  ConfigWiFi wifiCfg = getWiFiConfig();
+  wifiBootStaThenAp(wifiCfg);
 
   // NTP
   if (rtcNeedsSync()) {
@@ -108,11 +107,25 @@ void setup() {
 
   // Audio init & task (perlu sebelum initBeeps — ujian beep guna enqueueSpeech)
   initAudio();
+
+  ConfigAudio audioCfg = getAudioConfig();
+  applyAudioRuntimeConfig(audioCfg.volume, audioCfg.ttsLang);
+
   xTaskCreatePinnedToCore(AudioLoopTask, "AudioTask", 32768, NULL, 1, NULL, 0);
 
   // SPIFFS + WAV beep (jana hanya jika belum ada) + ujian bunyi boot
   showBootStatus("Loading beep...", 97);
   initBeeps();
+
+  ConfigDisplay dcfg = getDisplayConfig();
+  if (!setActiveLayoutByIndex(dcfg.layout)) {
+    Serial.printf("Boot: indeks layout %d tak sah — guna paparan lalai\n",
+                  dcfg.layout);
+  }
+
+  ConfigAnnounce ancCfg = getAnnounceConfig();
+  applyAnnounceRuntimeConfig(ancCfg.prayer, ancCfg.custom, ancCfg.everyMinute,
+                             ancCfg.everyQuarter);
 
   // Takwim
   DateTime nowBoot = rtc.now();
@@ -120,6 +133,8 @@ void setup() {
   syncPrayersFromTakwim();
 
   announceBootDateTimeRtc();
+
+  clockWebServerBegin();
 
   showBootStatus("System Ready!", 100);
   delay(500);
@@ -129,6 +144,13 @@ void setup() {
 // LOOP
 // ================================================================
 void loop() {
+  clockWebServerLoop();
+
+  if (clockWebRebootSoon) {
+    delay(450);
+    ESP.restart();
+  }
+
   DateTime now = rtc.now();
 
   static int lastDay = -1;

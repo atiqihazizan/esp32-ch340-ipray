@@ -2,9 +2,9 @@
 #define ANNOUNCE_MODULE_H
 
 #include "Audio.h"
-#include "AudioModule.h"   // enqueueSpeech(), stopAndFlushAudio()
-#include "BeepModule.h"    // beepPrayer(), beepDouble(), beepWarning()
-#include "PrayerData.h"
+#include "core/AudioModule.h" // enqueueSpeech(), stopAndFlushAudio()
+#include "BeepModule.h"       // beepPrayer(), beepDouble(), beepWarning()
+#include "data/PrayerData.h"
 #include "RTClib.h"
 #include <WiFi.h>
 
@@ -38,6 +38,14 @@ bool announcePrayer       = true;
 bool announceCustom       = false;
 bool announceEveryMinute  = false;
 bool announceEveryQuarter = true;
+
+inline void applyAnnounceRuntimeConfig(bool prayer, bool custom, bool everyMinute,
+                                       bool everyQuarter) {
+  announcePrayer = prayer;
+  announceCustom = custom;
+  announceEveryMinute = everyMinute;
+  announceEveryQuarter = everyQuarter;
+}
 
 // Sesua masa cetusan bagi pampasan kelewatan muat/Google TTS: jadual solat, jadual khas, dan pengumuman
 // minit/suku jam. Laraskan ikut rangkaian peranti anda (jangka ±2 hingga ±6 saat lazim).

@@ -1,7 +1,7 @@
 #ifndef BEEP_MODULE_H
 #define BEEP_MODULE_H
 
-#include "AudioModule.h"
+#include "core/AudioModule.h"
 #include <SPIFFS.h>
 #include <math.h>
 
@@ -63,6 +63,8 @@ static void _sine(File &f, int ms) {
     fade = n / 2;
 
   for (int i = 0; i < n; i++) {
+    if ((i & 0x3FF) == 0)
+      yield(); // elak boot “freeze” — jana WAV boleh ambil beberapa saat
     float env = 1.0f;
     if (i < fade)
       env = (float)i / fade;
@@ -81,8 +83,11 @@ static void _sine(File &f, int ms) {
 static void _sil(File &f, int ms) {
   int n = BEEP_SR * ms / 1000;
   int16_t z = 0;
-  for (int i = 0; i < n; i++)
+  for (int i = 0; i < n; i++) {
+    if ((i & 0x3FF) == 0)
+      yield();
     f.write((uint8_t *)&z, 2);
+  }
 }
 
 // ================================================================
@@ -186,10 +191,10 @@ static void _removeOldWav(const char *path) {
 // ================================================================
 // FUNGSI BEEP
 // ================================================================
-void beepSingle() { enqueueSpeech("/b1.wav"); }
+// void beepSingle() { enqueueSpeech("/b1.wav"); }
 void beepDouble() { enqueueSpeech("/b2.wav"); }
 void beepPrayer() { enqueueSpeech("/ba.wav"); }
-void beepWarning() { enqueueSpeech("/bw.wav"); }
+void beepWarning() { enqueueSpeech("/b2.wav"); }
 
 // ================================================================
 // INIT — jana fail WAV ke SPIFFS (langkau jika fail sudah ada)
@@ -207,7 +212,20 @@ void initBeeps() {
   _removeOldWav("/beep1.wav");
   _removeOldWav("/beep2.wav");
   _removeOldWav("/b3.wav");
+  _removeOldWav("/b2.wav");
   // _removeOldWav("/b5.wav");  // contoh: kalau dulu ada b5
+
+  // Versi dahulu janakan /ba.wav terlalu panjang (> SPIFFS partition) —
+  // buang satu kali untuk jana ulang pola baharu yang muat dalam flash.
+  {
+    File ch = SPIFFS.open("/ba.wav", "r");
+    if (ch && ch.size() > 620000L) {
+      ch.close();
+      SPIFFS.remove("/ba.wav");
+      Serial.println(F("Beep: /ba.wav lama terlalu besar — dipadam, akan jana semula"));
+    } else if (ch)
+      ch.close();
+  }
 
   // ── JANA fail WAV semasa ──
   // b1: 1 beep tunggal
@@ -220,11 +238,13 @@ void initBeeps() {
   // b2: 1 set (2 beep rapat)
   _makeWavSet("/b2.wav", 70, 50, 0, 1);
 
-  // b3: 10 set (untuk azan / prayer) — 2 beep × 10 set, jeda 800ms antara set
-  _makeWavSet("/ba.wav", 70, 50, 1700,20);
+  // ba: azan / prayer — dahulu 20 set ≈ >1 MB WAV (tidak muat dalam SPIFFS
+  // partition ~896 KiB); boot tersekat masa jana tulisan flash beratus ribu bait.
+  // 8 set ≈ siri bunyi panjang lagi ~0.4 MB WAV + ruang untuk bw / web / config.
+  _makeWavSet("/ba.wav", 70, 50, 1700, 8);
 
-  // b3: 5 set (untuk azan / prayer) — 2 beep × 5 set, jeda 800ms antara set
-  _makeWavSet("/bw.wav", 70, 50, 1700, 5);
+  // bw: amaran — 5 set
+  // _makeWavSet("/bw.wav", 70, 50, 1700, 5);
 
   // // bw: warning — 3 beep dengan jeda
   // {
