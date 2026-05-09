@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ms">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Set Jam</title>
+<title>Clock setup</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:520px;margin:12px auto;padding:0 8px;background:#111;color:#eee}
 h2{border-bottom:1px solid #444;padding-bottom:4px;font-size:1.1rem}
@@ -22,68 +22,71 @@ code{font-size:12px;color:#adf}
 </style>
 </head>
 <body>
-<h1 style="font-size:1.2rem;margin:8px 0">Jam pintar — konfigurasi</h1>
-<p class="p">Sambungan: letak dalam rangkaian yang sama seperti jam (STA atau hotspot <strong>MyClock-Setup</strong>).</p>
-<p class="p">Selepas kemas kini Wi‑Fi atau reboot, penyemak perlu tunggu but semula bersambung.</p>
+<h1 style="font-size:1.2rem;margin:8px 0">
+Configurations
+<a href="/files" style="float:right;font-size:14px;color:#6cf;text-decoration:none;font-weight:normal">📂 Files</a>
+</h1>
+<p class="p">Connection: use the same network as the clock (STA or hotspot <strong>MyClock-Setup</strong>).</p>
+<p class="p">After changing Wi‑Fi or rebooting, the browser may need a moment to reconnect.</p>
 
 <h2>Status</h2>
-<button type="button" class="btn secondary" onclick="loadStatus()">Segar status</button>
+<button type="button" class="btn secondary" onclick="loadStatus()">Refresh status</button>
 <pre id="st"></pre>
 
 <h2>Wi‑Fi</h2>
 <label>SSID</label><input id="wssid">
-<label>Kata laluan</label><input id="wpass" type="password" autocomplete="current-password" placeholder="(kosong = jangan tukar kata laluan tersimpan)">
-<label>mDNS hostname (tanpa .local)</label><input id="whost">
-<button type="button" class="btn" onclick="saveWifi()">Simpan Wi‑Fi (reboot)</button>
+<label>Password</label><input id="wpass" type="password" autocomplete="current-password" placeholder="(leave blank to keep saved password)">
+<label>mDNS hostname (without .local)</label><input id="whost">
+<button type="button" class="btn" onclick="saveWifi()">Save Wi‑Fi (reboot)</button>
 
-<h2>Takwim</h2>
-<label>URL muat turun (template) — guna <code>%ZONE%</code> atau <code>%s</code></label>
+<h2>Prayer timetable</h2>
+<label>Download URL (template) — use <code>%ZONE%</code> or <code>%s</code></label>
 <input id="turl" placeholder="https://…">
-<label>Zon (browser yang fetch dari JAKIM)</label>
+<label>Zone (fetched from JAKIM in the browser)</label>
 <select id="tzone"></select>
 
 <input type="hidden" id="takwimContent">
 
-<button type="button" class="btn secondary" onclick="saveTak()">Simpan URL/zon (config sahaja)</button>
-<button type="button" class="btn secondary" onclick="fetchTakwim()">1. Ambil takwim dari JAKIM (browser)</button>
-<button type="button" class="btn" onclick="uploadTakwim()" id="btnUpload" disabled>2. Upload ke jam</button>
+<button type="button" class="btn secondary" onclick="fetchTakwim()">1. Fetch timetable from JAKIM (browser)</button>
+<button type="button" class="btn" onclick="uploadTakwim()" id="btnUpload" disabled>2. Upload to clock (saves URL &amp; zone)</button>
 <div id="takStatus"></div>
 
-<h2>Paparan & audio</h2>
+<h2>Display &amp; audio</h2>
 <label>Layout</label>
 <select id="lay">
 <option value="0">0 Standard</option>
 <option value="1">1 Prayer</option>
 <option value="2">2 FlipFlop</option>
 <option value="3">3 Slide</option>
-<option value="4">4 Takwim</option>
+<option value="4">4 Timetable</option>
 </select>
+<button type="button" class="btn" onclick="saveDisp()">Save display (apply now)</button>
+
 <label>Volume 0–21</label><input id="vol" type="number" min="0" max="21">
-<label>Bahasa TTS</label><input id="lang" placeholder="en atau ms">
-<button type="button" class="btn" onclick="saveDisp()">Simpan paparan (langsung aktif)</button>
-<button type="button" class="btn secondary" onclick="saveAud()">Simpan audio (langsung aktif)</button>
+<label>TTS language</label><input id="lang" placeholder="en or ms">
+<button type="button" class="btn secondary" onclick="saveAud()">Save audio (apply now)</button>
 
-<h2>Pengumuman</h2>
-<label><input id="annp" type="checkbox" class="chk">Solat</label>
-<label><input id="annc" type="checkbox" class="chk">Jadual khas</label>
-<label><input id="annm" type="checkbox" class="chk">Setiap minit</label>
-<label><input id="annq" type="checkbox" class="chk">Suku jam</label>
-<button type="button" class="btn" onclick="saveAnn()">Simpan pengumuman</button>
+<h2>Announcements</h2>
+<label><input id="annp" type="checkbox" class="chk">Prayer</label>
+<label><input id="annc" type="checkbox" class="chk">Custom schedule</label>
+<label><input id="annm" type="checkbox" class="chk">Every minute</label>
+<label><input id="annq" type="checkbox" class="chk">Quarter-hour</label>
+<button type="button" class="btn" onclick="saveAnn()">Save announcements</button>
 
-<h2>Tindakan</h2>
-<button type="button" class="btn secondary" onclick="doNtp()">Sync NTP (perlukan STA)</button>
+<h2>Actions</h2>
+<button type="button" class="btn secondary" onclick="doNtp()">Sync NTP (needs STA)</button>
 <button type="button" class="btn secondary" onclick="doRb()">Reboot</button>
 
 <div id="msg"></div>
 
 <script>
 // ================================================================
-// HIJRI_DATA - hardcoded constant (sama macam takwim.txt sedia ada)
+// HIJRI_DATA - hardcoded constant (same as existing takwim.txt)
 // ================================================================
 const HIJRI_DATA = "2B75A5B654A76A55D5AA5CA56DD495DA525DAA4DD5AA6A95B652576A4B76C93665ABAC56D94A5DA92DD525BBA49BB255D52A6DA5B65497F4926ED25669ABB495DA525DD22BBA495BA9ABB4955A4B6DA936E916EDA4AED4966A4BB5A5DAA49BB493BA525BAA4DB5AA6A556DD256EA4A6DA92ED5AA6A55B54A5BA92BB525BB549BAA55D52A6DA5AED496EC925DD255D92A6D95B6525BB24B7A493729";
 
 // ================================================================
-// Senarai zon (dedupe + gabung lokasi setiap kod)
+// Zone list (dedupe + grouped by state)
 // ================================================================
 const ZONES = [
   { code: "JHR01", state: "Johor", locations: "Pulau Aur, Pemanggil" },
@@ -182,10 +185,10 @@ function buildHeader(zoneCode) {
   return `${zoneCode} - ${z.locations}`;
 }
 
-// JSON JAKIM → text format takwim.txt
+// JAKIM JSON → takwim.txt text format
 function jakimJsonToTakwimText(zoneCode, json) {
   if (!json || !Array.isArray(json.prayerTime) || json.prayerTime.length === 0) {
-    throw new Error('JSON tidak mengandungi prayerTime');
+    throw new Error('JSON missing prayerTime array');
   }
 
   const out = [];
@@ -222,21 +225,20 @@ function postJson(url, obj) {
 function showMsg(t) { document.getElementById('msg').textContent = t; }
 function setTakStatus(t) { document.getElementById('takStatus').textContent = t; }
 
-async function reloadCfgJikaOk(teksBalas) {
+async function reloadCfgJikaOk(responseText) {
   try {
-    const j = JSON.parse(teksBalas);
+    const j = JSON.parse(responseText);
     if (!j || !j.ok) return;
     await new Promise((resolve) => setTimeout(resolve, 150));
     await loadCfg();
-  } catch (e) { /* abaikan */ }
+  } catch (e) { /* ignore */ }
 }
 
-// Populate dropdown zon
+// Fill zone dropdown
 function populateZoneSelect(currentZone) {
   const sel = document.getElementById('tzone');
   sel.innerHTML = '';
 
-  // Group by state for visual clarity
   const byState = {};
   for (const z of ZONES) {
     if (!byState[z.state]) byState[z.state] = [];
@@ -305,29 +307,20 @@ async function saveWifi() {
 }
 
 // ================================================================
-// Takwim — 3 langkah
+// Prayer timetable — 2 steps (zone & URL auto-saved on upload)
 // ================================================================
-async function saveTak() {
-  const r = await postJson('/api/config/takwim', {
-    url: document.getElementById('turl').value,
-    zone: document.getElementById('tzone').value
-  });
-  const t = await r.text();
-  showMsg(t);
-  await reloadCfgJikaOk(t);
-}
 
-// (1) Browser fetch dari JAKIM → format → letak dalam hidden input
+// (1) Browser fetches JAKIM → format → hidden field
 async function fetchTakwim() {
   const zone = document.getElementById('tzone').value;
-  if (!zone) { setTakStatus('✗ Sila pilih zon dahulu'); return; }
+  if (!zone) { setTakStatus('✗ Select a zone first'); return; }
 
   const tmpl = document.getElementById('turl').value;
-  if (!tmpl) { setTakStatus('✗ URL template kosong'); return; }
+  if (!tmpl) { setTakStatus('✗ URL template is empty'); return; }
 
   const url = tmpl.replace('%ZONE%', zone).replace('%s', zone);
 
-  setTakStatus('⏳ Memuat turun dari JAKIM…');
+  setTakStatus('⏳ Downloading from JAKIM…');
   document.getElementById('btnUpload').disabled = true;
   document.getElementById('takwimContent').value = '';
 
@@ -340,22 +333,36 @@ async function fetchTakwim() {
     document.getElementById('takwimContent').value = txt;
 
     const lines = txt.split('\n').length - 1;
-    setTakStatus(`✓ Siap: ${j.prayerTime.length} hari (${lines} baris, ${txt.length} bait). Tekan butang upload.`);
+    setTakStatus(`✓ Ready: ${j.prayerTime.length} days (${lines} lines, ${txt.length} bytes). Tap upload.`);
     document.getElementById('btnUpload').disabled = false;
   } catch (e) {
-    setTakStatus('✗ Gagal: ' + e.message + ' (CORS? rangkaian? URL?)');
+    setTakStatus('✗ Failed: ' + e.message + ' (CORS? network? URL?)');
   }
 }
 
-// (2) Upload teks dalam hidden input → ESP32
+// (2) Auto-save URL/zone + upload body to ESP32
 async function uploadTakwim() {
   const txt = document.getElementById('takwimContent').value;
-  if (!txt) { setTakStatus('✗ Fetch dahulu sebelum upload'); return; }
+  if (!txt) { setTakStatus('✗ Fetch timetable before upload'); return; }
 
-  setTakStatus('⏳ Upload ke jam… (tunggu sehingga selesai)');
+  const zone = document.getElementById('tzone').value;
+  const url  = document.getElementById('turl').value;
+
+  setTakStatus('⏳ Saving URL & zone…');
   document.getElementById('btnUpload').disabled = true;
 
   try {
+    // Step A: auto-save URL + zone
+    const rCfg = await postJson('/api/config/takwim', { url, zone });
+    if (!rCfg.ok) {
+      const errTxt = await rCfg.text();
+      setTakStatus(`✗ Save zone/URL failed: HTTP ${rCfg.status} — ${errTxt}`);
+      document.getElementById('btnUpload').disabled = false;
+      return;
+    }
+
+    // Step B: upload timetable payload
+    setTakStatus('⏳ Uploading timetable to clock… (please wait)');
     const r = await fetch('/api/action/upload_takwim', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain; charset=UTF-8' },
@@ -364,11 +371,10 @@ async function uploadTakwim() {
     const t = await r.text();
     setTakStatus(`HTTP ${r.status} — ${t}`);
     if (r.ok) {
-      // Refresh status untuk lihat takwim_zon baru
       setTimeout(() => loadStatus(), 600);
     }
   } catch (e) {
-    setTakStatus('✗ Upload gagal: ' + e.message);
+    setTakStatus('✗ Upload failed: ' + e.message);
   } finally {
     document.getElementById('btnUpload').disabled = false;
   }
@@ -407,7 +413,7 @@ async function saveAnn() {
 }
 
 // ================================================================
-// Tindakan
+// Actions
 // ================================================================
 async function doNtp() {
   const r = await postJson('/api/action/ntp_sync', {});
@@ -415,7 +421,7 @@ async function doNtp() {
 }
 async function doRb() {
   await postJson('/api/action/reboot', {});
-  showMsg('Reboot diminta…');
+  showMsg('Reboot requested…');
 }
 
 loadCfg().then(loadStatus);

@@ -29,7 +29,7 @@ static inline String clockWebReadPostBody(WebServer &srv) {
   // application/json → keseluruhan badan diletak sebagai arg "plain".
   // x-www-form-urlencoded → biasanya medan data=...
   String plain = srv.arg("plain");
-  String data  = srv.arg("data");
+  String data = srv.arg("data");
   if (plain.length() != 0 && plain.charAt(0) == '{')
     return plain;
   if (data.length() != 0)
@@ -39,7 +39,8 @@ static inline String clockWebReadPostBody(WebServer &srv) {
   return "";
 }
 
-static inline void clockWebSendJson(WebServer &srv, int code, const String &json) {
+static inline void clockWebSendJson(WebServer &srv, int code,
+                                    const String &json) {
   srv.send(code, "application/json; charset=utf-8", json);
 }
 
@@ -68,25 +69,24 @@ static inline void clockWebHandleStatus(WebServer &srv) {
   JsonDocument doc;
   doc["heap"] = (int)ESP.getFreeHeap();
   doc["ssid"] = WiFi.SSID();
-  doc["rssi"] =
-      (WiFi.status() == WL_CONNECTED) ? WiFi.RSSI() : 0;
+  doc["rssi"] = (WiFi.status() == WL_CONNECTED) ? WiFi.RSSI() : 0;
   doc["sta_ip"] =
       (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString() : "";
-  doc["ap_ip"]    = wifiIsSoftApMode() ? WiFi.softAPIP().toString() : "";
-  doc["mode"]     = wifiIsSoftApMode() ? "ap" : "sta";
+  doc["ap_ip"] = wifiIsSoftApMode() ? WiFi.softAPIP().toString() : "";
+  doc["mode"] = wifiIsSoftApMode() ? "ap" : "sta";
 
   ConfigWiFi wf = getWiFiConfig();
   doc["mdns"] = String(wifiHostnameOrDefault(wf)) + ".local";
 
   doc["layout"] = (int)activeLayout;
-  doc["tts_lang"]   = activeTtsLang;
-  doc["takwim_ok"]  = takwimTodayValid();
+  doc["tts_lang"] = activeTtsLang;
+  doc["takwim_ok"] = takwimTodayValid();
   doc["takwim_zon"] = takwimZoneNameStr();
 
   DateTime t = rtc.now();
   char iso[36];
-  snprintf(iso, sizeof(iso), "%04d-%02d-%02dT%02d:%02d:%02d",
-           t.year(), t.month(), t.day(), t.hour(), t.minute(), t.second());
+  snprintf(iso, sizeof(iso), "%04d-%02d-%02dT%02d:%02d:%02d", t.year(),
+           t.month(), t.day(), t.hour(), t.minute(), t.second());
   doc["rtc_local"] = iso;
 
   String out;
@@ -96,23 +96,23 @@ static inline void clockWebHandleStatus(WebServer &srv) {
 
 static inline void clockWebHandleGetConfig(WebServer &srv) {
   JsonDocument doc;
-  ConfigWiFi      w   = getWiFiConfig();
-  ConfigTakwim    tk  = getTakwimConfig();
-  ConfigDisplay   d   = getDisplayConfig();
-  ConfigAudio     a   = getAudioConfig();
-  ConfigAnnounce  an = getAnnounceConfig();
+  ConfigWiFi w = getWiFiConfig();
+  ConfigTakwim tk = getTakwimConfig();
+  ConfigDisplay d = getDisplayConfig();
+  ConfigAudio a = getAudioConfig();
+  ConfigAnnounce an = getAnnounceConfig();
 
-  doc["wifi"]["ssid"]      = w.ssid;
+  doc["wifi"]["ssid"] = w.ssid;
   doc["wifi"]["password"] = "";
-  doc["wifi"]["hostname"]  = w.hostname;
-  doc["takwim"]["url"]     = tk.url;
-  doc["takwim"]["zone"]    = tk.zone;
+  doc["wifi"]["hostname"] = w.hostname;
+  doc["takwim"]["url"] = tk.url;
+  doc["takwim"]["zone"] = tk.zone;
   doc["display"]["layout"] = d.layout;
-  doc["audio"]["volume"]    = a.volume;
-  doc["audio"]["tts_lang"]  = a.ttsLang;
-  doc["announce"]["prayer"]         = an.prayer;
-  doc["announce"]["custom"]        = an.custom;
-  doc["announce"]["every_minute"]  = an.everyMinute;
+  doc["audio"]["volume"] = a.volume;
+  doc["audio"]["tts_lang"] = a.ttsLang;
+  doc["announce"]["prayer"] = an.prayer;
+  doc["announce"]["custom"] = an.custom;
+  doc["announce"]["every_minute"] = an.everyMinute;
   doc["announce"]["every_quarter"] = an.everyQuarter;
 
   String out;
@@ -154,7 +154,8 @@ static inline void clockWebHandlePostWifi(WebServer &srv) {
 
   Serial.println(F("Web: simpan wi-fi diproses …"));
   if (!saveWiFiConfig(w)) {
-    Serial.println(F("Web: ERROR simpan wi-fi gagal (lihat log Config di atas)"));
+    Serial.println(
+        F("Web: ERROR simpan wi-fi gagal (lihat log Config di atas)"));
     clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"simpan_wifi\"}");
     return;
   }
@@ -202,8 +203,8 @@ static inline void clockWebHandlePostTakwimCfg(WebServer &srv) {
   Serial.printf("Web: takwim config OK zon=%s\n", t.zone);
 
   JsonDocument rd;
-  rd["ok"]   = true;
-  rd["url"]  = t.url;
+  rd["ok"] = true;
+  rd["url"] = t.url;
   rd["zone"] = t.zone;
   String outSaved;
   serializeJson(rd, outSaved);
@@ -325,9 +326,9 @@ static inline void clockWebHandlePostAnnounce(WebServer &srv) {
 
 static inline void clockWebHandleNtp(WebServer &srv) {
   String msg;
-  bool   ok = clockNtpManualSync(msg);
+  bool ok = clockNtpManualSync(msg);
   JsonDocument doc;
-  doc["ok"]  = ok;
+  doc["ok"] = ok;
   doc["msg"] = msg;
   String out;
   serializeJson(doc, out);
@@ -345,21 +346,19 @@ static inline void clockWebHandleUploadTakwim(WebServer &srv) {
   if (body.length() < 5000) {
     Serial.printf("Web: upload takwim ditolak — saiz=%u terlalu kecil\n",
                   (unsigned)body.length());
-    clockWebSendJson(srv, 400,
-                     "{\"ok\":false,\"err\":\"saiz_terlalu_kecil\"}");
+    clockWebSendJson(srv, 400, "{\"ok\":false,\"err\":\"saiz_terlalu_kecil\"}");
     return;
   }
   if (body.length() > 100000) {
     Serial.printf("Web: upload takwim ditolak — saiz=%u terlalu besar\n",
                   (unsigned)body.length());
-    clockWebSendJson(srv, 400,
-                     "{\"ok\":false,\"err\":\"saiz_terlalu_besar\"}");
+    clockWebSendJson(srv, 400, "{\"ok\":false,\"err\":\"saiz_terlalu_besar\"}");
     return;
   }
 
   // ── Cari corak DD-MM-YYYY dalam 1 KB pertama ──
   bool hasDateLine = false;
-  int  scanLimit   = body.length() < 1024 ? body.length() : 1024;
+  int scanLimit = body.length() < 1024 ? body.length() : 1024;
   for (int i = 0; i < scanLimit - 10; i++) {
     char c0 = body.charAt(i);
     char c1 = body.charAt(i + 1);
@@ -373,9 +372,9 @@ static inline void clockWebHandleUploadTakwim(WebServer &srv) {
     }
   }
   if (!hasDateLine) {
-    Serial.println(F("Web: upload takwim ditolak — corak DD-MM-YYYY tidak dijumpai"));
-    clockWebSendJson(srv, 400,
-                     "{\"ok\":false,\"err\":\"format_tidak_sah\"}");
+    Serial.println(
+        F("Web: upload takwim ditolak — corak DD-MM-YYYY tidak dijumpai"));
+    clockWebSendJson(srv, 400, "{\"ok\":false,\"err\":\"format_tidak_sah\"}");
     return;
   }
 
@@ -388,9 +387,9 @@ static inline void clockWebHandleUploadTakwim(WebServer &srv) {
 
   File f = SPIFFS.open("/takwim.txt", "w");
   if (!f) {
-    Serial.println(F("Web: ERROR upload takwim — tidak boleh buka /takwim.txt"));
-    clockWebSendJson(srv, 500,
-                     "{\"ok\":false,\"err\":\"buka_gagal\"}");
+    Serial.println(
+        F("Web: ERROR upload takwim — tidak boleh buka /takwim.txt"));
+    clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"buka_gagal\"}");
     return;
   }
 
@@ -401,8 +400,7 @@ static inline void clockWebHandleUploadTakwim(WebServer &srv) {
   if (written < (size_t)body.length()) {
     Serial.printf("Web: ERROR upload takwim — tulis %u/%u bait sahaja\n",
                   (unsigned)written, (unsigned)body.length());
-    clockWebSendJson(srv, 500,
-                     "{\"ok\":false,\"err\":\"tulis_tak_lengkap\"}");
+    clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"tulis_tak_lengkap\"}");
     return;
   }
 
@@ -423,6 +421,181 @@ static inline void clockWebHandleReboot(WebServer &srv) {
   clockWebRebootSoon = true;
   clockWebSendJson(srv, 200, "{\"ok\":true,\"reboot\":true}");
 }
+// ================================================================
+// HANDLER: List semua file dalam SPIFFS
+// GET /api/files → {files: [{path, size}, ...], used, total}
+// ================================================================
+static inline void clockWebHandleFiles(WebServer &srv) {
+  JsonDocument doc;
+  JsonArray arr = doc["files"].to<JsonArray>();
+
+  // Walk SPIFFS recursively (depth 2 cukup untuk /config/, /web/)
+  std::function<void(const char *)> walk = [&](const char *dirPath) {
+    File dir = SPIFFS.open(dirPath);
+    if (!dir || !dir.isDirectory()) {
+      if (dir)
+        dir.close();
+      return;
+    }
+    File f = dir.openNextFile();
+    while (f) {
+      String fullPath = String(f.path());
+      if (f.isDirectory()) {
+        walk(fullPath.c_str());
+      } else {
+        JsonObject obj = arr.add<JsonObject>();
+        obj["path"] = fullPath;
+        obj["size"] = (uint32_t)f.size();
+      }
+      f = dir.openNextFile();
+    }
+    dir.close();
+  };
+
+  walk("/");
+
+  doc["used"] = (uint32_t)SPIFFS.usedBytes();
+  doc["total"] = (uint32_t)SPIFFS.totalBytes();
+
+  String out;
+  serializeJson(doc, out);
+  clockWebSendJson(srv, 200, out);
+}
+
+// ================================================================
+// HANDLER: Get content satu file (text)
+// GET /api/file?path=/config/wifi.json
+// ================================================================
+static inline void clockWebHandleGetFile(WebServer &srv) {
+  if (!srv.hasArg("path")) {
+    srv.send(400, "text/plain; charset=utf-8", "tiada parameter path");
+    return;
+  }
+  String path = srv.arg("path");
+
+  if (path.length() == 0 || path.charAt(0) != '/') {
+    srv.send(400, "text/plain; charset=utf-8", "path tidak sah");
+    return;
+  }
+
+  // Block path traversal
+  if (path.indexOf("..") >= 0) {
+    srv.send(400, "text/plain; charset=utf-8", "path traversal disekat");
+    return;
+  }
+
+  if (!SPIFFS.exists(path)) {
+    srv.send(404, "text/plain; charset=utf-8", "fail tidak wujud");
+    return;
+  }
+
+  File f = SPIFFS.open(path, "r");
+  if (!f) {
+    srv.send(500, "text/plain; charset=utf-8", "tidak boleh buka");
+    return;
+  }
+
+  // Limit display 200 KB (selamat, elak OOM)
+  if (f.size() > 200 * 1024) {
+    f.close();
+    srv.send(413, "text/plain; charset=utf-8",
+             "fail terlalu besar untuk paparan");
+    return;
+  }
+
+  // Auto MIME
+  const char *mime = "text/plain; charset=utf-8";
+  if (path.endsWith(".json"))
+    mime = "application/json; charset=utf-8";
+  else if (path.endsWith(".html"))
+    mime = "text/html; charset=utf-8";
+  else if (path.endsWith(".css"))
+    mime = "text/css; charset=utf-8";
+  else if (path.endsWith(".js"))
+    mime = "application/javascript; charset=utf-8";
+
+  srv.streamFile(f, mime);
+  f.close();
+}
+
+// ================================================================
+// HANDLER: Save edit JSON file (PUT)
+// PUT /api/file?path=/config/wifi.json + body = new content
+// ================================================================
+static inline void clockWebHandlePutFile(WebServer &srv) {
+  if (!srv.hasArg("path")) {
+    clockWebSendJson(srv, 400, "{\"ok\":false,\"err\":\"tiada_path\"}");
+    return;
+  }
+  String path = srv.arg("path");
+
+  if (path.length() == 0 || path.charAt(0) != '/') {
+    clockWebSendJson(srv, 400, "{\"ok\":false,\"err\":\"path_tidak_sah\"}");
+    return;
+  }
+  if (path.indexOf("..") >= 0) {
+    clockWebSendJson(srv, 400, "{\"ok\":false,\"err\":\"traversal\"}");
+    return;
+  }
+
+  // SECURITY: hanya benarkan edit /config/*.json
+  if (!path.startsWith("/config/") || !path.endsWith(".json")) {
+    clockWebSendJson(srv, 403,
+                     "{\"ok\":false,\"err\":\"hanya_/config/*.json\"}");
+    return;
+  }
+
+  String body = srv.arg("plain");
+  if (body.length() == 0) {
+    clockWebSendJson(srv, 400, "{\"ok\":false,\"err\":\"body_kosong\"}");
+    return;
+  }
+  if (body.length() > 8192) {
+    clockWebSendJson(srv, 413, "{\"ok\":false,\"err\":\"body_terlalu_besar\"}");
+    return;
+  }
+
+  // Validate JSON di server side juga (defence-in-depth)
+  JsonDocument validateDoc;
+  DeserializationError jerr = deserializeJson(validateDoc, body);
+  if (jerr) {
+    String err = "{\"ok\":false,\"err\":\"json_tak_sah:";
+    err += jerr.c_str();
+    err += "\"}";
+    clockWebSendJson(srv, 400, err);
+    return;
+  }
+
+  // Lepaskan SPIFFS dari audio sebelum tulis
+  stopAndFlushAudio();
+  delay(50);
+
+  // Atomik: padam dulu, tulis baru
+  if (SPIFFS.exists(path) && !SPIFFS.remove(path)) {
+    clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"padam_lama_gagal\"}");
+    return;
+  }
+
+  File f = SPIFFS.open(path, "w");
+  if (!f) {
+    clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"buka_tulis_gagal\"}");
+    return;
+  }
+
+  size_t n = f.print(body);
+  f.flush();
+  f.close();
+
+  if (n != (size_t)body.length()) {
+    Serial.printf("Web: file edit — tulis %u/%u bait sahaja\n", (unsigned)n,
+                  (unsigned)body.length());
+    clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"tulis_separuh\"}");
+    return;
+  }
+
+  Serial.printf("Web: edit fail %s OK (%u bait)\n", path.c_str(), (unsigned)n);
+  clockWebSendJson(srv, 200, "{\"ok\":true}");
+}
 
 inline void clockWebServerBegin() {
   WebServer &s = clockWebServer();
@@ -433,23 +606,45 @@ inline void clockWebServerBegin() {
   s.on("/api/status", HTTP_GET, [&s]() { clockWebHandleStatus(s); });
   s.on("/api/config", HTTP_GET, [&s]() { clockWebHandleGetConfig(s); });
 
-  s.on("/api/config/wifi", HTTP_POST,
-       [&s]() { clockWebHandlePostWifi(s); });
+  s.on("/api/config/wifi", HTTP_POST, [&s]() { clockWebHandlePostWifi(s); });
   s.on("/api/config/takwim", HTTP_POST,
        [&s]() { clockWebHandlePostTakwimCfg(s); });
   s.on("/api/config/display", HTTP_POST,
        [&s]() { clockWebHandlePostDisplay(s); });
-  s.on("/api/config/audio", HTTP_POST,
-       [&s]() { clockWebHandlePostAudio(s); });
+  s.on("/api/config/audio", HTTP_POST, [&s]() { clockWebHandlePostAudio(s); });
   s.on("/api/config/announce", HTTP_POST,
        [&s]() { clockWebHandlePostAnnounce(s); });
 
-  s.on("/api/action/ntp_sync", HTTP_POST,
-       [&s]() { clockWebHandleNtp(s); });
-  s.on("/api/action/reboot", HTTP_POST,
-       [&s]() { clockWebHandleReboot(s); });
+  s.on("/api/action/ntp_sync", HTTP_POST, [&s]() { clockWebHandleNtp(s); });
+  s.on("/api/action/reboot", HTTP_POST, [&s]() { clockWebHandleReboot(s); });
   s.on("/api/action/upload_takwim", HTTP_POST,
-        [&s]() { clockWebHandleUploadTakwim(s); });
+       [&s]() { clockWebHandleUploadTakwim(s); });
+
+  // File browser
+  s.on("/api/files", HTTP_GET, [&s]() { clockWebHandleFiles(s); });
+  s.on("/api/file", HTTP_GET, [&s]() { clockWebHandleGetFile(s); });
+  s.on("/api/file", HTTP_PUT, [&s]() { clockWebHandlePutFile(s); });
+
+  // Static page
+  s.on("/files", HTTP_GET, [&s]() {
+    File f = SPIFFS.open("/web/files.html", "r");
+    if (!f) {
+      s.send(500, "text/plain; charset=utf-8",
+             "Tiada /web/files.html — jalankan: pio run -t uploadfs");
+      return;
+    }
+    s.streamFile(f, "text/html; charset=utf-8");
+    f.close();
+  });
+  s.on("/files.html", HTTP_GET, [&s]() {
+    File f = SPIFFS.open("/web/files.html", "r");
+    if (f) {
+      s.streamFile(f, "text/html; charset=utf-8");
+      f.close();
+    } else {
+      s.send(404, "text/plain; charset=utf-8", "404");
+    }
+  });
 
   s.onNotFound([&s]() { clockWebHandle404(s); });
 
