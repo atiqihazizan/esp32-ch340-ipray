@@ -1,0 +1,9 @@
+.pio/
+.vscode/
+.cache/
+.DS_Store
+compile_commands.json
+backup/
+include/config.h
+__pycache__/
+*.pyc

@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+  <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; color: #333;">
+    <h1 style="color: #2c5530; border-bottom: 3px solid #2c5530; padding-bottom: 10px;">
+      🕌 Prayer Time TTS Tester
+    </h1>
+    <p style="color: #666;">Klik butang untuk dengar sebutan Google TTS. Bandingkan mana yang paling natural untuk telinga anda.</p>
+    <p style="color: #856404; font-size: 13px; background: #fff8e1; padding: 10px; border-radius: 6px; border-left: 4px solid #ffc107;">
+      <strong>CORB / Chrome:</strong> Pelayar menghalang muat audio Google secara rentas-asal. Untuk bunyi <strong>Google TTS</strong> yang sama seperti ujian ini, jalankan proksi tempatan daripada folder projek:
+      <code style="background:#fff;padding:2px 6px;border-radius:4px;">python3 scripts/serve_tts_tester.py</code>
+      kemudian buka <strong>http://127.0.0.1:8765/index.html</strong>.
+      Jika buka <code>index.html</code> sebagai fail (<code>file://</code>), hanya sandaran <strong>Web Speech</strong> (suara sistem) yang digunakan selepas klik.
+    </p>
+  
+    <div id="status" style="padding: 10px; margin: 10px 0; border-radius: 6px; background: #e8f5e9; color: #2c5530; min-height: 20px;">
+      Sedia untuk test...
+    </div>
+  
+    <h2 style="color: #2c5530; margin-top: 30px;">📋 Pilihan A — "It is now time for X"</h2>
+    <div id="optionA"></div>
+  
+    <h2 style="color: #2c5530; margin-top: 30px;">📋 Pilihan B — "It is now X prayer time"</h2>
+    <div id="optionB"></div>
+  
+    <h2 style="color: #2c5530; margin-top: 30px;">📋 Pilihan C — Phonetic-friendly spelling</h2>
+    <p style="color: #666; font-size: 14px;">Spelling yang Google TTS baca lebih lancar</p>
+    <div id="optionC"></div>
+  
+    <h2 style="color: #2c5530; margin-top: 30px;">📋 Pilihan D — Dengan pause (koma)</h2>
+    <p style="color: #666; font-size: 14px;">Tambah koma → pause natural macam pengumuman sebenar</p>
+    <div id="optionD"></div>
+  
+    <h2 style="color: #2c5530; margin-top: 30px;">📋 Pilihan E — Repeat untuk impak</h2>
+    <p style="color: #666; font-size: 14px;">Macam announcement masjid sebenar</p>
+    <div id="optionE"></div>
+  
+    <h2 style="color: #2c5530; margin-top: 30px;">🎯 Compare individual words</h2>
+    <p style="color: #666; font-size: 14px;">Test sebutan setiap nama untuk pilih spelling terbaik</p>
+    <div id="compareWords"></div>
+  
+    <h2 style="color: #2c5530; margin-top: 30px;">💧 The Famous "Water" Test (& T-glottalization)</h2>
+    <p style="color: #666; font-size: 14px;">Perkataan ini terkenal kerana sebutan sangat berbeza antara loghat. Cuba dengar dan bandingkan!</p>
+    <div id="waterTest"></div>
+  
+    <h2 style="color: #2c5530; margin-top: 30px;">🇬🇧 British vs 🇺🇸 American — A/B Compare</h2>
+    <p style="color: #666; font-size: 14px;">Klik untuk dengar phrase yang sama dalam loghat berbeza</p>
+    <div id="accentCompare"></div>
+  
+    <h2 style="color: #2c5530; margin-top: 30px;">✏️ Custom Test</h2>
+    <input id="customText" type="text" value="It is now time for Fajar prayer"
+           style="width: 60%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;" />
+    <select id="customLang" style="padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;">
+      <option value="en">en (US default)</option>
+      <option value="en-GB">en-GB (British)</option>
+      <option value="en-US">en-US (American)</option>
+      <option value="en-AU">en-AU (Australian)</option>
+      <option value="en-IN">en-IN (Indian)</option>
+      <option value="ms">ms (Melayu)</option>
+      <option value="id">id (Indonesia)</option>
+      <option value="ar">ar (Arabic)</option>
+    </select>
+    <button onclick="playCustom()"
+            style="padding: 10px 20px; background: #2c5530; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+      ▶ Play
+    </button>
+  </div>
+  
+  <script>
+  const optionA = [
+    ["Subuh",  "It is now time for Fajr"],
+    ["Syuruk", "It is now sunrise"],
+    ["Zohor",  "It is now time for Dhuhr"],
+    ["Asar",   "It is now time for Asr"],
+    ["Mgrb",   "It is now time for Maghrib"],
+    ["Isyak",  "It is now time for Isha"],
+  ];
+  
+  const optionB = [
+    ["Subuh",  "It is now Fajr prayer time"],
+    ["Zohor",  "It is now Dhuhr prayer time"],
+    ["Mgrb",   "It is now Maghrib prayer time"],
+  ];
+  
+  const optionC = [
+    ["Subuh",  "It is now time for Fajar"],
+    ["Zohor",  "It is now time for Zuhur"],
+    ["Asar",   "It is now time for Asar"],
+    ["Mgrb",   "It is now time for Maghrib"],
+    ["Isyak",  "It is now time for Isyak"],
+  ];
+  
+  const optionD = [
+    ["Subuh",  "It is now, time for Fajar prayer"],
+    ["Zohor",  "It is now, time for Zuhur prayer"],
+    ["Mgrb",   "It is now, time for Maghrib prayer"],
+  ];
+  
+  const optionE = [
+    ["Zohor",  "Attention. It is now time for Zuhur prayer. Zuhur prayer."],
+    ["Mgrb",   "Attention. It is now time for Maghrib prayer. Maghrib prayer."],
+  ];
+  
+  const wordCompare = [
+    "soobooh", "Fajar",
+    "Dhuhr", "Zuhur", "Zohor",
+    "Asarrr", "Asar",
+    "Maghrib", "Mugrib",
+    "Isha", "Isyak", "Ishaa"
+  ];
+  
+  const status = document.getElementById('status');
+  let currentAudio = null;
+  let playGeneration = 0;
+
+  /**
+   * URL audio untuk Main — hanya sama-asal /tts (proksi server tempatan).
+   * Jangan isi URL translate.google.com di sini: Chrome akan CORB-sekat respons tersebut.
+   */
+  function buildTtsUrls(text, tl) {
+    var q = encodeURIComponent(text);
+    var tlEnc = encodeURIComponent(tl);
+    var urls = [];
+    if (location.protocol === 'http:' || location.protocol === 'https:') {
+      urls.push(location.origin + '/tts?q=' + q + '&tl=' + tlEnc);
+    }
+    return urls;
+  }
+
+  function speechLangFor(lang) {
+    var map = {
+      'en': 'en-US',
+      'en-US': 'en-US',
+      'en-GB': 'en-GB',
+      'en-AU': 'en-AU',
+      'en-IN': 'en-IN',
+      'ms': 'ms-MY',
+      'id': 'id-ID',
+      'ar': 'ar-SA'
+    };
+    return map[lang] || lang || 'en-US';
+  }
+
+  /** Pilih voice sistem yang hampir sama dengan tag BCP-47 (Chrome/Safari kadang kosong tanpa ini). */
+  function pickSpeechVoice(langTag) {
+    var voices = speechSynthesis.getVoices();
+    if (!voices || !voices.length) return null;
+    var want = (langTag || 'en-US').replace('_', '-').toLowerCase();
+    var primary = want.split('-')[0];
+    var i;
+    for (i = 0; i < voices.length; i++) {
+      var vl = (voices[i].lang || '').replace('_', '-').toLowerCase();
+      if (vl === want) return voices[i];
+    }
+    for (i = 0; i < voices.length; i++) {
+      vl = (voices[i].lang || '').replace('_', '-').toLowerCase();
+      if (vl.indexOf(primary + '-') === 0 || vl === primary) return voices[i];
+    }
+    return null;
+  }
+
+  /**
+   * Web Speech: banyak pelayar perlukan (1) voicesloaded / voiceschanged,
+   * (2) jeda ringkas selepas cancel() — kalau tidak kerap error "interrupted".
+   */
+  function playWithSpeechSynthesis(text, useLang, gen) {
+    if (!('speechSynthesis' in window)) {
+      status.textContent = '❌ Proksi TTS / Web Speech tidak tersedia pada pelayar ini.';
+      status.style.background = '#f8d7da';
+      status.style.color = '#721c24';
+      return;
+    }
+
+    if (!text || !String(text).trim()) {
+      status.textContent = '❌ Tiada teks untuk dibaca.';
+      status.style.background = '#f8d7da';
+      status.style.color = '#721c24';
+      return;
+    }
+
+    function runSpeak() {
+      if (gen !== playGeneration) return;
+
+      var langTag = speechLangFor(useLang);
+
+      speechSynthesis.cancel();
+
+      window.setTimeout(function () {
+        if (gen !== playGeneration) return;
+        var u = new SpeechSynthesisUtterance(text);
+        u.lang = langTag;
+        u.rate = 1;
+        u.pitch = 1;
+        u.volume = 1;
+
+        var voice = pickSpeechVoice(langTag);
+        if (voice) u.voice = voice;
+
+        status.textContent = '🔊 Web Speech [' + langTag + (voice ? ' · ' + voice.name : '') + '] (sandaran): "' + text + '"';
+        status.style.background = '#e3f2fd';
+        status.style.color = '#1565c0';
+
+        u.onend = function () {
+          if (gen !== playGeneration) return;
+          status.textContent = '✓ Selesai (Web Speech). Klik butang lain untuk compare.';
+          status.style.background = '#e8f5e9';
+          status.style.color = '#2c5530';
+        };
+
+        u.onerror = function (ev) {
+          if (gen !== playGeneration) return;
+          var code = (ev && ev.error) ? ev.error : 'unknown';
+          status.textContent = '❌ Web Speech gagal: ' + code + ' — Cuba klik Play sekali lagi, atau pelayar lain (Chrome/Firefox).';
+          status.style.background = '#f8d7da';
+          status.style.color = '#721c24';
+        };
+
+        try {
+          speechSynthesis.speak(u);
+        } catch (err) {
+          status.textContent = '❌ Web Speech: ' + (err && err.message ? err.message : String(err));
+          status.style.background = '#f8d7da';
+          status.style.color = '#721c24';
+        }
+      }, 80);
+    }
+
+    if (speechSynthesis.getVoices().length > 0) {
+      runSpeak();
+      return;
+    }
+
+    var fired = false;
+    function onVoices() {
+      if (fired || gen !== playGeneration) return;
+      fired = true;
+      speechSynthesis.removeEventListener('voiceschanged', onVoices);
+      runSpeak();
+    }
+
+    speechSynthesis.addEventListener('voiceschanged', onVoices);
+    speechSynthesis.getVoices();
+
+    window.setTimeout(function () {
+      if (gen !== playGeneration || fired) return;
+      fired = true;
+      speechSynthesis.removeEventListener('voiceschanged', onVoices);
+      runSpeak();
+    }, 120);
+
+    status.textContent = '🔊 Memuatkan suara sistem…';
+    status.style.background = '#fff3cd';
+    status.style.color = '#856404';
+  }
+
+  /* Pra-muat senarai voice (Chrome lazim kosong pada render pertama). */
+  if ('speechSynthesis' in window) {
+    speechSynthesis.getVoices();
+    speechSynthesis.addEventListener('voiceschanged', function () {
+      speechSynthesis.getVoices();
+    });
+  }
+
+  if (location.protocol === 'file:') {
+    status.style.background = '#fff8e1';
+    status.style.color = '#856404';
+    status.textContent =
+      'Mod file:// — untuk Google TTS jalankan python3 scripts/serve_tts_tester.py dan buka http://127.0.0.1:8765/index.html. Klik butang untuk Web Speech.';
+  }
+
+  function play(text, btn, lang) {
+    playGeneration++;
+    var gen = playGeneration;
+
+    if ('speechSynthesis' in window) {
+      try {
+        speechSynthesis.resume();
+      } catch (err) {}
+    }
+
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.src = '';
+      currentAudio = null;
+    }
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+
+    var useLang = lang || 'en';
+    status.textContent = '🔊 Memuatkan audio [' + useLang + ']…';
+    status.style.background = '#fff3cd';
+    status.style.color = '#856404';
+
+    var urls = buildTtsUrls(text, useLang);
+    var i = 0;
+
+    function tryNextTtsUrl() {
+      if (gen !== playGeneration) return;
+
+      if (currentAudio) {
+        currentAudio.onerror = null;
+        currentAudio.onended = null;
+        currentAudio.pause();
+        currentAudio.src = '';
+        currentAudio = null;
+      }
+
+      if (i >= urls.length) {
+        playWithSpeechSynthesis(text, useLang, gen);
+        return;
+      }
+      var url = urls[i++];
+      var audio = new Audio(url);
+      currentAudio = audio;
+
+      audio.onended = function () {
+        if (gen !== playGeneration) return;
+        status.textContent = '✓ Selesai (Google TTS melalui proksi). Klik butang lain untuk compare.';
+        status.style.background = '#e8f5e9';
+        status.style.color = '#2c5530';
+      };
+
+      audio.onerror = function () {
+        if (gen !== playGeneration) return;
+        tryNextTtsUrl();
+      };
+
+      audio.play().then(function () {
+        if (gen !== playGeneration) return;
+        status.textContent = '🔊 Main (Google TTS) [' + useLang + ']: "' + text + '"';
+      }).catch(function () {
+        if (gen !== playGeneration) return;
+        tryNextTtsUrl();
+      });
+    }
+
+    tryNextTtsUrl();
+  }
+  
+  function playCustom() {
+    const text = document.getElementById('customText').value;
+    const lang = document.getElementById('customLang').value;
+    if (text.trim()) play(text, null, lang);
+  }
+  
+  function makeAccentButtons() {
+    const phrases = [
+      "It is now time for Fajar prayer",
+      "It is now time for Maghrib prayer",
+      "Attention. Prayer time has begun.",
+    ];
+    const accents = [
+      ["en-GB", "🇬🇧 British", "#1976d2"],
+      ["en-US", "🇺🇸 American", "#d32f2f"],
+      ["en-AU", "🇦🇺 Australian", "#388e3c"],
+    ];
+    const div = document.getElementById('accentCompare');
+  
+    phrases.forEach(text => {
+      const row = document.createElement('div');
+      row.style.cssText = 'margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 6px;';
+  
+      const label = document.createElement('div');
+      label.style.cssText = 'font-weight: bold; margin-bottom: 8px; color: #333;';
+      label.textContent = '"' + text + '"';
+      row.appendChild(label);
+  
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display: flex; gap: 8px; flex-wrap: wrap;';
+  
+      accents.forEach(([code, name, color]) => {
+        const btn = document.createElement('button');
+        btn.style.cssText = 'flex: 1; min-width: 120px; padding: 10px; background: white; border: 2px solid ' + color + '; color: ' + color + '; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;';
+        btn.textContent = name;
+        btn.onclick = () => play(text, btn, code);
+        btnRow.appendChild(btn);
+      });
+  
+      row.appendChild(btnRow);
+      div.appendChild(row);
+    });
+  }
+  
+  function makeButtons(items, container) {
+    const div = document.getElementById(container);
+    items.forEach(([label, text]) => {
+      const btn = document.createElement('button');
+      btn.style.cssText = 'display: block; width: 100%; text-align: left; padding: 12px; margin: 6px 0; background: #f0f7f0; border: 1px solid #c8e6c9; border-radius: 6px; cursor: pointer; font-size: 14px; transition: all 0.2s;';
+      btn.innerHTML = '<strong style="color: #2c5530;">' + label + ':</strong> <span style="color: #555;">"' + text + '"</span>';
+      btn.onmouseover = () => btn.style.background = '#c8e6c9';
+      btn.onmouseout = () => btn.style.background = '#f0f7f0';
+      btn.onclick = () => play(text, btn);
+      div.appendChild(btn);
+    });
+  }
+  
+  function makeWordButtons() {
+    const div = document.getElementById('compareWords');
+    div.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px;';
+    wordCompare.forEach(word => {
+      const btn = document.createElement('button');
+      btn.style.cssText = 'padding: 10px; background: #fff3e0; border: 1px solid #ffcc80; border-radius: 6px; cursor: pointer; font-size: 14px; transition: all 0.2s;';
+      btn.textContent = word;
+      btn.onmouseover = () => btn.style.background = '#ffcc80';
+      btn.onmouseout = () => btn.style.background = '#fff3e0';
+      btn.onclick = () => play(word, btn);
+      div.appendChild(btn);
+    });
+  }
+  
+  function makeWaterTest() {
+    const words = [
+      ["water", "💧 water — yang famous tu"],
+      ["bottle", "🍾 bottle — Brit: 'bo'oh'"],
+      ["butter", "🧈 butter — Brit: 'bu'ah'"],
+      ["better", "👍 better — Brit: 'be'ah'"],
+      ["little", "🤏 little — Brit: 'li'oh'"],
+      ["Saturday", "📅 Saturday"],
+      ["computer", "💻 computer"],
+      ["thirty", "30️⃣ thirty"],
+      ["I want a bottle of water", "🗣️ Full sentence test"],
+    ];
+    const accents = [
+      ["en-GB", "🇬🇧 GB", "#1976d2"],
+      ["en-US", "🇺🇸 US", "#d32f2f"],
+      ["en-AU", "🇦🇺 AU", "#388e3c"],
+      ["en-IN", "🇮🇳 IN", "#f57c00"],
+    ];
+    const div = document.getElementById('waterTest');
+  
+    words.forEach(([word, label]) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'margin: 8px 0; padding: 10px; background: #e3f2fd; border-radius: 6px;';
+  
+      const lbl = document.createElement('div');
+      lbl.style.cssText = 'font-weight: bold; margin-bottom: 6px; color: #1565c0;';
+      lbl.textContent = label;
+      row.appendChild(lbl);
+  
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display: flex; gap: 6px; flex-wrap: wrap;';
+  
+      accents.forEach(([code, name, color]) => {
+        const btn = document.createElement('button');
+        btn.style.cssText = 'flex: 1; min-width: 70px; padding: 8px; background: white; border: 2px solid ' + color + '; color: ' + color + '; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;';
+        btn.textContent = name;
+        btn.onclick = () => play(word, btn, code);
+        btnRow.appendChild(btn);
+      });
+  
+      row.appendChild(btnRow);
+      div.appendChild(row);
+    });
+  }
+  
+  makeButtons(optionA, 'optionA');
+  makeButtons(optionB, 'optionB');
+  makeButtons(optionC, 'optionC');
+  makeButtons(optionD, 'optionD');
+  makeButtons(optionE, 'optionE');
+  makeWordButtons();
+  makeAccentButtons();
+  makeWaterTest();
+  </script>
+</body>
+</html>
