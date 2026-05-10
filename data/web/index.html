@@ -51,17 +51,7 @@ Configurations
 <button type="button" class="btn" onclick="uploadTakwim()" id="btnUpload" disabled>2. Upload to clock (saves URL &amp; zone)</button>
 <div id="takStatus"></div>
 
-<h2>Display &amp; audio</h2>
-<label>Layout</label>
-<select id="lay">
-<option value="0">0 Standard</option>
-<option value="1">1 Prayer</option>
-<option value="2">2 FlipFlop</option>
-<option value="3">3 Slide</option>
-<option value="4">4 Timetable</option>
-</select>
-<button type="button" class="btn" onclick="saveDisp()">Save display (apply now)</button>
-
+<h2>Audio</h2>
 <label>Volume 0–21</label><input id="vol" type="number" min="0" max="21">
 <label>TTS language</label><input id="lang" placeholder="en or ms">
 <button type="button" class="btn secondary" onclick="saveAud()">Save audio (apply now)</button>
@@ -280,7 +270,6 @@ async function loadCfg() {
     document.getElementById('wpass').value = '';
     document.getElementById('turl').value = j.takwim.url || '';
     populateZoneSelect(j.takwim.zone || 'PNG01');
-    document.getElementById('lay').value = String(j.display.layout ?? 3);
     document.getElementById('vol').value = j.audio.volume ?? 21;
     document.getElementById('lang').value = j.audio.tts_lang || '';
     document.getElementById('annp').checked = !!j.announce.prayer;
@@ -381,16 +370,8 @@ async function uploadTakwim() {
 }
 
 // ================================================================
-// Display / Audio / Announce
+// Audio / Announce
 // ================================================================
-async function saveDisp() {
-  const r = await postJson('/api/config/display', {
-    layout: parseInt(document.getElementById('lay').value, 10)
-  });
-  const t = await r.text();
-  showMsg(t);
-  await reloadCfgJikaOk(t);
-}
 async function saveAud() {
   const r = await postJson('/api/config/audio', {
     volume: parseInt(document.getElementById('vol').value, 10),

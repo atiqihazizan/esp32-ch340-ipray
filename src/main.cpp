@@ -117,12 +117,6 @@ void setup() {
   showBootStatus("Loading beep...", 97);
   initBeeps();
 
-  ConfigDisplay dcfg = getDisplayConfig();
-  if (!setActiveLayoutByIndex(dcfg.layout)) {
-    Serial.printf("Boot: indeks layout %d tak sah — guna paparan lalai\n",
-                  dcfg.layout);
-  }
-
   ConfigAnnounce ancCfg = getAnnounceConfig();
   applyAnnounceRuntimeConfig(ancCfg.prayer, ancCfg.custom, ancCfg.everyMinute,
                              ancCfg.everyQuarter);

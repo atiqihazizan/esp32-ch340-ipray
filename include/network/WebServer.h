@@ -98,7 +98,6 @@ static inline void clockWebHandleGetConfig(WebServer &srv) {
   JsonDocument doc;
   ConfigWiFi w = getWiFiConfig();
   ConfigTakwim tk = getTakwimConfig();
-  ConfigDisplay d = getDisplayConfig();
   ConfigAudio a = getAudioConfig();
   ConfigAnnounce an = getAnnounceConfig();
 
@@ -107,7 +106,6 @@ static inline void clockWebHandleGetConfig(WebServer &srv) {
   doc["wifi"]["hostname"] = w.hostname;
   doc["takwim"]["url"] = tk.url;
   doc["takwim"]["zone"] = tk.zone;
-  doc["display"]["layout"] = d.layout;
   doc["audio"]["volume"] = a.volume;
   doc["audio"]["tts_lang"] = a.ttsLang;
   doc["announce"]["prayer"] = an.prayer;
@@ -209,43 +207,6 @@ static inline void clockWebHandlePostTakwimCfg(WebServer &srv) {
   String outSaved;
   serializeJson(rd, outSaved);
   clockWebSendJson(srv, 200, outSaved);
-}
-
-static inline void clockWebHandlePostDisplay(WebServer &srv) {
-  clockWebSebelumSimpanSpi();
-  String body = clockWebReadPostBody(srv);
-  if (body.length() == 0) {
-    clockWebSendJson(srv, 400, "{\"ok\":false,\"err\":\"tiada_body\"}");
-    return;
-  }
-  JsonDocument doc;
-  DeserializationError jerr = deserializeJson(doc, body);
-  if (jerr) {
-    Serial.printf("Web: paparan JSON gagal — %s\n", jerr.c_str());
-    clockWebSendJson(srv, 400, "{\"ok\":false,\"err\":\"json\"}");
-    return;
-  }
-
-  ConfigDisplay cfg;
-  if (doc["layout"].isNull()) {
-    clockWebSendJson(srv, 400, "{\"ok\":false,\"err\":\"layout\"}");
-    return;
-  }
-  cfg.layout = doc["layout"].as<int>();
-
-  if (!setActiveLayoutByIndex(cfg.layout)) {
-    clockWebSendJson(srv, 400, "{\"ok\":false,\"err\":\"layout_julat\"}");
-    return;
-  }
-
-  if (!saveDisplayConfig(cfg)) {
-    Serial.println(F("Web: ERROR simpan display.json gagal"));
-    clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"simpan_paparan\"}");
-    return;
-  }
-
-  Serial.printf("Web: paparan OK — layout=%d aktif di SPIFFS\n", cfg.layout);
-  clockWebSendJson(srv, 200, "{\"ok\":true}");
 }
 
 static inline void clockWebHandlePostAudio(WebServer &srv) {
@@ -609,8 +570,6 @@ inline void clockWebServerBegin() {
   s.on("/api/config/wifi", HTTP_POST, [&s]() { clockWebHandlePostWifi(s); });
   s.on("/api/config/takwim", HTTP_POST,
        [&s]() { clockWebHandlePostTakwimCfg(s); });
-  s.on("/api/config/display", HTTP_POST,
-       [&s]() { clockWebHandlePostDisplay(s); });
   s.on("/api/config/audio", HTTP_POST, [&s]() { clockWebHandlePostAudio(s); });
   s.on("/api/config/announce", HTTP_POST,
        [&s]() { clockWebHandlePostAnnounce(s); });
