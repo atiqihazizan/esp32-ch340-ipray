@@ -7,3 +7,4 @@ backup/
 include/config.h
 __pycache__/
 *.pyc
+*.bak

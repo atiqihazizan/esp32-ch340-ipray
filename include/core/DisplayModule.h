@@ -5,6 +5,7 @@
 #include <Adafruit_SSD1306.h>
 #include <WiFi.h>
 #include "data/PrayerData.h"
+#include "data/ConfigModule.h"   
 #include "SlideAnimUtil.h"
 
 extern Adafruit_SSD1306 display;
@@ -108,9 +109,10 @@ inline void printOledWifiIpStatus() {
     else
       s = "WiFi:--";
   }
-  const int maxCh = 11;
-  if ((int)s.length() > maxCh)
-    s = s.substring((unsigned)((int)s.length() - maxCh));
+  
+  // const int maxCh = 11;
+  // if ((int)s.length() > maxCh)
+  //   s = s.substring((unsigned)((int)s.length() - maxCh));
   display.print(s);
 }
 
@@ -276,65 +278,253 @@ void showWiFiError() {
 //  └────────────────────────┘
 //
 void runOledHomeStandard(DateTime now) {
+  static SlideField fHour, fMin, fSec;
+  static SlideField fDay, fMonth, fYear;
+
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  display.setTextSize(2);
-  display.setCursor(16, 8);
-  char t[9];
-  sprintf(t, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
-  display.print(t);
+  // ── JAM (textSize 2) — di tengah, sama macam original (cursor x=16, y=8) ──
+  const int CLOCK_Y = 8;
+  const int X_HH    = 16;
+  const int X_C1    = X_HH + 24;     // x=40
+  const int X_MM    = X_C1 + 12;     // x=52
+  const int X_C2    = X_MM + 24;     // x=76
+  const int X_SS    = X_C2 + 12;     // x=88
 
-  display.setTextSize(1);
-  display.setCursor(29, 30);
-  display.printf("%02d/%02d/%04d", now.day(), now.month(), now.year());
+  slideDrawField(fHour, now.hour(),   X_HH, CLOCK_Y, 2, 2);
+  slideDrawField(fMin,  now.minute(), X_MM, CLOCK_Y, 2, 2);
+  slideDrawField(fSec,  now.second(), X_SS, CLOCK_Y, 2, 2);
 
+  slideDrawSeparator(":", X_C1, CLOCK_Y, 2);
+  slideDrawSeparator(":", X_C2, CLOCK_Y, 2);
+
+  // ── TARIKH (textSize 1) — di tengah, original x=29, y=30 ──
+  const int DATE_Y = 30;
+  const int X_DD   = 29;
+  const int X_S1   = X_DD + 12;       // x=41
+  const int X_MO   = X_S1 + 6;        // x=47
+  const int X_S2   = X_MO + 12;       // x=59
+  const int X_YR   = X_S2 + 6;        // x=65
+
+  slideDrawField(fDay,   now.day(),   X_DD, DATE_Y, 1, 2);
+  slideDrawField(fMonth, now.month(), X_MO, DATE_Y, 1, 2);
+  slideDrawField(fYear,  now.year(),  X_YR, DATE_Y, 1, 4);
+
+  slideDrawSeparator("/", X_S1, DATE_Y, 1);
+  slideDrawSeparator("/", X_S2, DATE_Y, 1);
+
+  // ── Status bar ──
   display.drawLine(0, 54, 128, 54, SSD1306_WHITE);
-  display.setCursor(0, 57);
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(2, 57);
   printOledWifiIpStatus();
-  display.setCursor(68, 57);
+  display.setCursor(85, 57);
   display.print(audioStatus);
 
   display.display();
 }
 
 // ================================================================
-// LAYOUT HOME 2: + WAKTU SOLAT
+// LAYOUT HOME 2: + WAKTU SOLAT (3-panel flipflop bawah)
 // ================================================================
 //
-//  ┌────────────────────────┐
-//  │     12:34:56           │  ← textSize 2
-//  │     08/05/2026         │  ← textSize 1
-//  │────────────────────────│
-//  │ Solat : Asar    16:30  │
-//  │ Masa  : 1j 55m lagi    │
-//  └────────────────────────┘
+//  Panel A (Next Prayer):    Panel B (All Prayers):     Panel C (Network):
+//  ┌────────────────────┐    ┌────────────────────┐    ┌────────────────────┐
+//  │     12:34:56       │    │     12:34:56       │    │     12:34:56       │
+//  │     08/05/2026     │    │     08/05/2026     │    │     08/05/2026     │
+//  │ ───────────────── │    │ ─────────────────  │    │ ─────────────────  │
+//  │ Solat: Asar 16:30 │    │ Sub 05:51 Zhr 13:12│    │ IP: 192.168.1.50  │
+//  │ Masa : 1j 55m lagi│    │[Asr 16:33]Mgb 19:20│    │ Host: my-clock     │
+//  │                    │    │ Isy 20:32 Syr 07:01│    │                    │
+//  └────────────────────┘    └────────────────────┘    └────────────────────┘
+//
+//  Bottom panel flipflop tiap 4 saat (independent dari date flipflop).
 //
 void runOledHomePrayer(DateTime now) {
+  static SlideField fHour, fMin, fSec;
+
+  // Date flipflop (Masihi ↔ Hijri)
+  static bool showHijri = false;
+  static uint32_t lastShowHijri = 0;
+  if (millis() - lastShowHijri > 4000) {
+    showHijri = !showHijri;
+    lastShowHijri = millis();
+  }
+
+  // Panel flipflop (A → B → C → A → ...)
+  static int      panelIdx     = 0;     // 0=NextPrayer, 1=AllPrayers, 2=Network
+  static uint32_t lastPanelFlip = 0;
+  if (millis() - lastPanelFlip > 4000) {
+    panelIdx = (panelIdx + 1) % 3;
+    lastPanelFlip = millis();
+  }
+
+  // Cache hostname (slow SPIFFS read — ambil sekali sahaja)
+  static char cachedHostname[33] = {0};
+  static bool hostnameInit = false;
+  if (!hostnameInit) {
+    ConfigWiFi w = getWiFiConfig();
+    strncpy(cachedHostname, w.hostname, 32);
+    cachedHostname[32] = '\0';
+    if (cachedHostname[0] == '\0')
+      strncpy(cachedHostname, "my-clock", 32);
+    hostnameInit = true;
+  }
+
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  display.setTextSize(2);
-  display.setCursor(16, 4);
-  char t[9];
-  sprintf(t, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
-  display.print(t);
+  // ── JAM (textSize 2) — animated ──
+  const int CLOCK_Y = 4;
+  const int X_HH    = 16;
+  const int X_C1    = X_HH + 24;
+  const int X_MM    = X_C1 + 12;
+  const int X_C2    = X_MM + 24;
+  const int X_SS    = X_C2 + 12;
 
+  slideDrawField(fHour, now.hour(),   X_HH, CLOCK_Y, 2, 2);
+  slideDrawField(fMin,  now.minute(), X_MM, CLOCK_Y, 2, 2);
+  slideDrawField(fSec,  now.second(), X_SS, CLOCK_Y, 2, 2);
+  slideDrawSeparator(":", X_C1, CLOCK_Y, 2);
+  slideDrawSeparator(":", X_C2, CLOCK_Y, 2);
+
+  // ── TARIKH (Masihi/Hijri flipflop) ──
   display.setTextSize(1);
-  display.setCursor(29, 24);
-  display.printf("%02d/%02d/%04d", now.day(), now.month(), now.year());
+  display.setTextColor(SSD1306_WHITE);
 
+  if (!showHijri) {
+    char ds[11];
+    sprintf(ds, "%02d/%02d/%04d", now.day(), now.month(), now.year());
+    display.setCursor(64 - (int)(strlen(ds) * 3), 24);
+    display.print(ds);
+  } else {
+    HijriDate h;
+    if (todayTakwim.valid) {
+      h.day = todayTakwim.hDay;
+      h.month = todayTakwim.hMonth;
+      h.year = todayTakwim.hYear;
+    } else {
+      h = toHijri(now.day(), now.month(), now.year());
+    }
+    char hs[20];
+    sprintf(hs, "%d %s %dH", h.day, hijriMonthShort(h.month), h.year);
+    display.setCursor(64 - (int)(strlen(hs) * 3), 24);
+    display.print(hs);
+  }
+
+  // ── Garis pemisah ──
   display.drawLine(0, 34, 128, 34, SSD1306_WHITE);
 
-  int nextH, nextM;
-  const char* pName = getNextPrayer(now.hour(), now.minute(), nextH, nextM);
-  int diff = (nextH * 60 + nextM) - (now.hour() * 60 + now.minute());
-  if (diff < 0) diff += 1440;
+  // ── BOTTOM PANEL — FLIPFLOP ──
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
 
-  display.setCursor(0, 38);
-  display.printf("Solat : %-6s %02d:%02d", pName, nextH, nextM);
-  display.setCursor(0, 50);
-  display.printf("Masa  : %dj %02dm lagi", diff / 60, diff % 60);
+  if (panelIdx == 0) {
+    // ============ PANEL A: NEXT PRAYER ============
+    int nextH, nextM;
+    const char *pName = getNextPrayer(now.hour(), now.minute(), nextH, nextM);
+    int diff = (nextH * 60 + nextM) - (now.hour() * 60 + now.minute());
+    if (diff < 0) diff += 1440;
+
+    display.setCursor(0, 38);
+    display.printf("Solat : %-6s %02d:%02d", pName, nextH, nextM);
+    display.setCursor(0, 50);
+    display.printf("Masa  : %dj %02dm lagi", diff / 60, diff % 60);
+
+  } else if (panelIdx == 1) {
+    // ============ PANEL B: SEMUA PRAYERS + HIGHLIGHT NEXT ============
+    // 6 waktu, 2 column × 3 row
+    // Order yang sesuai untuk paparan: Sub, Zhr, Asr, Mgb, Isy, Syr
+    // (Subuh dulu, Syuruk last sebab dia "tambahan" bukan waktu solat fardu)
+
+    // Cari index next prayer dalam prayers[] (untuk highlight)
+    int nowMin   = now.hour() * 60 + now.minute();
+    int nextIdx  = -1;
+    for (int i = 0; i < PRAYER_COUNT; i++) {
+      int pt = prayers[i].hour * 60 + prayers[i].minute;
+      if (pt > nowMin) {
+        nextIdx = i;
+        break;
+      }
+    }
+    if (nextIdx == -1) nextIdx = 0;  // lepas Isyak → next = Subuh esok
+
+    // Susunan paparan: index dalam prayers[] dan posisi grid (col, row)
+    // prayers[]: 0=Subuh, 1=Syuruk, 2=Zohor, 3=Asar, 4=Maghrib, 5=Isyak
+    struct PrayerCell {
+      int prayerIdx;
+      int col;  // 0 atau 1
+      int row;  // 0, 1, 2
+    };
+    static const PrayerCell layout[6] = {
+      { 0, 0, 0 },  // Subuh    → kiri atas
+      { 2, 1, 0 },  // Zohor    → kanan atas
+      { 3, 0, 1 },  // Asar     → kiri tengah
+      { 4, 1, 1 },  // Maghrib  → kanan tengah
+      { 5, 0, 2 },  // Isyak    → kiri bawah
+      { 1, 1, 2 },  // Syuruk   → kanan bawah
+    };
+
+    const int CELL_W = 64;   // 128 / 2
+    const int CELL_H = 9;    // 27 / 3
+    const int Y_BASE = 37;
+
+    for (int i = 0; i < 6; i++) {
+      const PrayerCell &c = layout[i];
+      int pi = c.prayerIdx;
+
+      int x = c.col * CELL_W;
+      int y = Y_BASE + c.row * CELL_H;
+
+      bool isNext = (pi == nextIdx);
+
+      if (isNext) {
+        // Inverted highlight
+        display.fillRect(x, y - 1, CELL_W, CELL_H, SSD1306_WHITE);
+        display.setTextColor(SSD1306_BLACK);
+      } else {
+        display.setTextColor(SSD1306_WHITE);
+      }
+
+      // Format pendek: "Sub 5:51" (3-char name + spasi + H:MM)
+      // Sebab cell 64px ÷ 6px/char = 10 char max
+      char buf[16];
+      // prayers[i].name boleh 4-6 char ("Subuh", "Zohor", "Mgrb")
+      // Guna 3 char abbrev untuk pastikan muat
+      const char *full = prayers[pi].name;
+      char shortName[4];
+      shortName[0] = full[0];
+      shortName[1] = full[1] ? full[1] : ' ';
+      shortName[2] = full[2] ? full[2] : ' ';
+      shortName[3] = '\0';
+
+      snprintf(buf, sizeof(buf), "%s %d:%02d", shortName,
+               prayers[pi].hour, prayers[pi].minute);
+
+      display.setCursor(x + 1, y);
+      display.print(buf);
+    }
+    display.setTextColor(SSD1306_WHITE);  // reset
+
+  } else {
+    // ============ PANEL C: NETWORK INFO ============
+    display.setCursor(0, 38);
+    display.print("IP  : ");
+    if (WiFi.status() == WL_CONNECTED) {
+      display.print(WiFi.localIP().toString());
+    } else {
+      wifi_mode_t m = WiFi.getMode();
+      if (m == WIFI_MODE_AP || m == WIFI_MODE_APSTA)
+        display.print(WiFi.softAPIP().toString());
+      else
+        display.print("--");
+    }
+
+    display.setCursor(0, 50);
+    display.printf("Host: %s", cachedHostname);
+  }
 
   display.display();
 }
@@ -353,6 +543,8 @@ void runOledHomePrayer(DateTime now) {
 //  └────────────────────┘     └─────────────────────┘
 //
 void runOledHomeFlipFlop(DateTime now) {
+  static SlideField fHour, fMin, fSec;
+  static SlideField fDay, fMonth, fYear;
   static bool showHijri = false;
   static uint32_t lastFlip = 0;
 
@@ -364,24 +556,34 @@ void runOledHomeFlipFlop(DateTime now) {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  display.setTextSize(2);
-  display.setCursor(16, 8);
-  char t[9];
-  sprintf(t, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
-  display.print(t);
+  // ── JAM (textSize 2) — original x=16, y=8 ──
+  const int CLOCK_Y = 8;
+  const int X_HH    = 16;
+  const int X_C1    = X_HH + 24;     // x=40
+  const int X_MM    = X_C1 + 12;     // x=52
+  const int X_C2    = X_MM + 24;     // x=76
+  const int X_SS    = X_C2 + 12;     // x=88
+
+  slideDrawField(fHour, now.hour(),   X_HH, CLOCK_Y, 2, 2);
+  slideDrawField(fMin,  now.minute(), X_MM, CLOCK_Y, 2, 2);
+  slideDrawField(fSec,  now.second(), X_SS, CLOCK_Y, 2, 2);
+
+  slideDrawSeparator(":", X_C1, CLOCK_Y, 2);
+  slideDrawSeparator(":", X_C2, CLOCK_Y, 2);
 
   display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
 
   if (!showHijri) {
+    // ── TARIKH MASIHI — text static (tengahkan) ──
     char ds[11];
     sprintf(ds, "%02d/%02d/%04d", now.day(), now.month(), now.year());
     display.setCursor(64 - (int)(strlen(ds) * 3), 28); // tengahkan
     display.print(ds);
-    display.setCursor(55, 38);
-    display.print("[M]");
   } else {
+    // ── TARIKH HIJRI — text static (tengahkan) ──
     HijriDate h;
-    if( todayTakwim.valid) {
+    if (todayTakwim.valid) {
       h.day = todayTakwim.hDay;
       h.month = todayTakwim.hMonth;
       h.year = todayTakwim.hYear;
@@ -392,14 +594,12 @@ void runOledHomeFlipFlop(DateTime now) {
     sprintf(hs, "%d %s %dH", h.day, hijriMonthShort(h.month), h.year);
     display.setCursor(64 - (int)(strlen(hs) * 3), 28); // tengahkan
     display.print(hs);
-    display.setCursor(55, 38);
-    display.print("[H]");
   }
 
   display.drawLine(0, 54, 128, 54, SSD1306_WHITE);
-  display.setCursor(0, 57);
+  display.setCursor(2, 57);
   printOledWifiIpStatus();
-  display.setCursor(68, 57);
+  display.setCursor(85, 57);
   display.print(audioStatus);
 
   display.display();
@@ -465,7 +665,7 @@ void runOledHomeSlide(DateTime now) {
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 57);
   display.print(WiFi.status() == WL_CONNECTED ? "WIFI:OK" : "WIFI:ER");
-  display.setCursor(75, 57);
+  display.setCursor(85, 57);
   display.print(audioStatus);
 
   display.display();
