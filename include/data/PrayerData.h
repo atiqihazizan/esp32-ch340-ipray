@@ -22,12 +22,12 @@ struct PrayerSlot {
 };
 
 static PrayerSlot prayers[] = {
-    {"Subuh",  {0}, 0, 0, 30,  300},
+    {"Subuh",  {0}, 0, 0, 600,  300},
     {"Syuruk", {0}, 0, 0,  0,    0},
-    {"Zohor",  {0}, 0, 0, 30,  300},
-    {"Asar",   {0}, 0, 0, 30,  300},
-    {"Mgrb",   {0}, 0, 0, 30,  300},
-    {"Isyak",  {0}, 0, 0, 30,  300},
+    {"Zohor",  {0}, 0, 0, 300,  300},
+    {"Asar",   {0}, 0, 0, 300,  300},
+    {"Mgrb",   {0}, 0, 0, 300,  300},
+    {"Isyak",  {0}, 0, 0, 180,  300},
 };
 static const int PRAYER_COUNT = sizeof(prayers) / sizeof(PrayerSlot);
 

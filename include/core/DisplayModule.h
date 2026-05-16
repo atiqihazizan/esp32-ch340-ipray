@@ -5,7 +5,6 @@
 #include "config.h"
 #include "data/ConfigModule.h"
 #include "data/PrayerData.h"
-#include "logic/BeepModule.h"
 #include <Adafruit_SSD1306.h>
 #include <WiFi.h>
 #include <Wire.h>
@@ -209,24 +208,6 @@ void showWiFiError() {
   display.display();
 }
 
-// ─── HOLD & BEEP STATE ───────────────────────────────────
-static int _activePrayerIdx = -1;
-static uint32_t _prayerStartMs = 0;
-static bool _prayerHoldDone = false;
-
-static int getCurrentPrayerIdx(int h, int m) {
-  int nowMin = h * 60 + m;
-  for (int i = 0; i < PRAYER_COUNT; i++) {
-    int thisStart = prayers[i].hour * 60 + prayers[i].minute;
-    int nextStart = (i + 1 < PRAYER_COUNT)
-                        ? prayers[i + 1].hour * 60 + prayers[i + 1].minute
-                        : 24 * 60;
-    if (nowMin >= thisStart && nowMin < nextStart)
-      return i;
-  }
-  return -1;
-}
-
 // ─── LAYOUT HOME PRAYER ──────────────────────────────────
 void runOledHomePrayer(DateTime now) {
   static SlideField fHour, fMin, fSec;
@@ -255,22 +236,6 @@ void runOledHomePrayer(DateTime now) {
     if (cachedHostname[0] == 0)
       strncpy(cachedHostname, "my-clock", 32);
     hostnameInit = true;
-  }
-
-  // Hold 1 minit + double beep
-  int curIdx = getCurrentPrayerIdx(now.hour(), now.minute());
-  if (curIdx != _activePrayerIdx) {
-    _activePrayerIdx = curIdx;
-    _prayerStartMs = millis();
-    _prayerHoldDone = false;
-  }
-  if (!_prayerHoldDone && _activePrayerIdx >= 0) {
-    if (millis() - _prayerStartMs >= 60000UL) {
-      beepDouble();
-      _prayerHoldDone = true;
-      homePanelIdx = 0;
-      homeLastPanelFlip = millis();
-    }
   }
 
   // ── Lukis ──

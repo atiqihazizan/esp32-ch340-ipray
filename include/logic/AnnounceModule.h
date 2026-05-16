@@ -95,33 +95,89 @@ static inline int ledSecondsToday(int totalSec) {
 // ================================================================
 void buildTimeText(char *buf, size_t len, int h, int m) {
   int h12 = (h % 12 == 0) ? 12 : h % 12;
-  // if (m == 0) snprintf(buf, len, "It's %d o'clock", h12);
-  // else        snprintf(buf, len, "It's %d %02d", h12, m);
-  if (m == 0) snprintf(buf, len, "%d o'clock", h12);
-  else        snprintf(buf, len, "%d %02d", h12, m);
+  if (m == 0) snprintf(buf, len, "It's %d o'clock", h12);
+  else        snprintf(buf, len, "It's %d %02d", h12, m);
+  // if (m == 0) snprintf(buf, len, "%d o'clock", h12);
+  // else        snprintf(buf, len, "%d %02d", h12, m);
 }
 
-// Bina teks amaran ikut secondsBefore (dynamic).
-// Auto pilih unit: < 60s → "In X seconds", kelipatan 60 → "In Y minutes",
-// selainnya → "In Y minutes X seconds".
+// TTS: masa tunggu dalam ayat pembuka «In …» — ≤59 saat guna second;
+// ≥60 saat gabungkan hari, jam, minit, (& sisa saat jika ada) ikut bahasa mudah untuk TTS.
+static inline size_t appendLeadInDurPart(char *out, size_t cap, size_t u, bool *comma,
+                                         int val, const char *sg, const char *pl) {
+  if (val <= 0 || u >= cap)
+    return u;
+  const char *w = (val == 1) ? sg : pl;
+  int n = snprintf(out + u, cap - u, "%s%d %s", (*comma) ? ", " : "", val, w);
+  if (n > 0) {
+    u += (size_t)n;
+    *comma = true;
+  }
+  return u;
+}
+
+static void buildLeadInDuration(char *out, size_t outLen, int totalSec) {
+  if (outLen <= 8)
+    return;
+  if (totalSec <= 0) {
+    snprintf(out, outLen, "In a moment");
+    return;
+  }
+  if (totalSec <= 59) {
+    snprintf(out, outLen, "In %d second%s", totalSec,
+             (totalSec == 1) ? "" : "s");
+    return;
+  }
+
+  int d = totalSec / 86400;
+  int r = totalSec % 86400;
+  int h = r / 3600;
+  r %= 3600;
+  int mi = r / 60;
+  int se = r % 60;
+
+  size_t u = snprintf(out, outLen, "In ");
+  bool comma = false;
+  u = appendLeadInDurPart(out, outLen, u, &comma, d, "day", "days");
+  u = appendLeadInDurPart(out, outLen, u, &comma, h, "hour", "hours");
+  u = appendLeadInDurPart(out, outLen, u, &comma, mi, "minute", "minutes");
+  u = appendLeadInDurPart(out, outLen, u, &comma, se, "second", "seconds");
+}
+
+// Pecahan tempoh (saat) untuk ayat «telah berlalu» — ≤59 second; ≥60 pecah days/hours/minutes/seconds
+static void buildElapsedDurationParts(char *out, size_t outLen, int totalSec) {
+  if (outLen < 8)
+    return;
+  if (totalSec <= 0) {
+    snprintf(out, outLen, "a moment");
+    return;
+  }
+  if (totalSec <= 59) {
+    snprintf(out, outLen, "%d second%s", totalSec,
+             (totalSec == 1) ? "" : "s");
+    return;
+  }
+
+  int d = totalSec / 86400;
+  int r = totalSec % 86400;
+  int hPart = r / 3600;
+  r %= 3600;
+  int mi = r / 60;
+  int se = r % 60;
+
+  size_t u     = 0;
+  bool   comma = false;
+  u = appendLeadInDurPart(out, outLen, u, &comma, d, "day", "days");
+  u = appendLeadInDurPart(out, outLen, u, &comma, hPart, "hour", "hours");
+  u = appendLeadInDurPart(out, outLen, u, &comma, mi, "minute", "minutes");
+  u = appendLeadInDurPart(out, outLen, u, &comma, se, "second", "seconds");
+}
+
+// Bina teks amaran ikut secondsBefore untuk TTS.
 void buildWarningText(char *buf, size_t len, const char *text,
                       int tH, int tM, int secondsBefore) {
-  char prefix[40];
-
-  if (secondsBefore < 60) {
-    snprintf(prefix, sizeof(prefix), "In %d second%s",
-             secondsBefore, (secondsBefore == 1) ? "" : "s");
-  } else if (secondsBefore % 60 == 0) {
-    int mins = secondsBefore / 60;
-    snprintf(prefix, sizeof(prefix), "In %d minute%s",
-             mins, (mins == 1) ? "" : "s");
-  } else {
-    int mins = secondsBefore / 60;
-    int secs = secondsBefore % 60;
-    snprintf(prefix, sizeof(prefix), "In %d minute%s %d second%s",
-             mins, (mins == 1) ? "" : "s",
-             secs, (secs == 1) ? "" : "s");
-  }
+  char prefix[144];
+  buildLeadInDuration(prefix, sizeof(prefix), secondsBefore);
 
   if (text) {
     snprintf(buf, len, "%s, %s", prefix, text);
@@ -132,8 +188,12 @@ void buildWarningText(char *buf, size_t len, const char *text,
 }
 
 // ================================================================
-// CORE 1: Proses jadual SOLAT
+// CORE 1: Proses jadual SOLAT (amaran awal, masuk waktu, warn_after)
+// Bendera warnAfter: true selepas TTS masuk waktu; warn_after diurus di sini juga.
 // ================================================================
+static bool prayerWarnAfterPending = false;
+static int  prayerWarnAfterSlot    = -1;
+
 bool processPrayerSchedule(int h, int m, int totalSec,
                             int &lastKey, int &lastWarnKey) {
   const int led  = ledSecondsToday(totalSec);
@@ -141,6 +201,38 @@ bool processPrayerSchedule(int h, int m, int totalSec,
   const int advM = (led % 3600) / 60;
   (void)h;
   (void)m;
+
+  // --- warn_after: dalam skop jadual solat, tidak gagal dek played suku/minit ---
+  if (announcePrayer && prayerWarnAfterPending &&
+      prayerWarnAfterSlot >= 0 && prayerWarnAfterSlot < PRAYER_COUNT) {
+    int iw = prayerWarnAfterSlot;
+    int wa = prayers[iw].warnAfterSec;
+    if (wa <= 0) {
+      prayerWarnAfterPending = false;
+      prayerWarnAfterSlot    = -1;
+    } else {
+      int ttH        = prayers[iw].hour;
+      int ttM        = prayers[iw].minute;
+      int warnTarget = ttH * 3600 + ttM * 60 + wa;
+      if (totalSec >= warnTarget && totalSec < warnTarget + 60) {
+        char dur[96];
+        char line[TTS_TEXT_LEN];
+        buildElapsedDurationParts(dur, sizeof(dur), wa);
+        snprintf(line, sizeof(line),
+                 "%s prayer time has passed, %s since prayer time.",
+                 prayers[iw].name, dur);
+        beepDouble();
+        enqueueSpeech(line);
+        prayerWarnAfterPending = false;
+        prayerWarnAfterSlot    = -1;
+        return true;
+      }
+      if (totalSec > warnTarget + 60) {
+        prayerWarnAfterPending = false;
+        prayerWarnAfterSlot    = -1;
+      }
+    }
+  }
 
   for (int i = 0; i < PRAYER_COUNT; i++) {
     int tH        = prayers[i].hour;
@@ -166,6 +258,14 @@ bool processPrayerSchedule(int h, int m, int totalSec,
       beepPrayer();                          // ← beep waktu solat (10 bip)
       enqueueSpeech(prayers[i].announce);    // ← TTS lepas tu
       lastKey = entryKey;
+      // Aktifkan menunggu peringatan warn_after — tidak bergantung pada played / suku jam
+      if (prayers[i].warnAfterSec > 0) {
+        prayerWarnAfterPending = true;
+        prayerWarnAfterSlot    = i;
+      } else {
+        prayerWarnAfterPending = false;
+        prayerWarnAfterSlot    = -1;
+      }
       return true;
     }
   }
@@ -190,18 +290,6 @@ bool processSchedule(AnnounceEntry *schedule, int count,
     int wBefore   = schedule[i].warnBefore;
     int entryKey  = tH * 100 + tM;
     int targetSec = tH * 3600 + tM * 60;
-
-    // if (wBefore > 0 && lastWarnKey != entryKey) {
-    //   int warnSec = targetSec - wBefore;
-    //   if (led >= warnSec && led <= warnSec + 2) {
-    //     char buf[100];
-    //     buildWarningText(buf, sizeof(buf), schedule[i].text, tH, tM, wBefore);
-    //     beepWarning();        // ← 3 bip pantas dulu
-    //     enqueueSpeech(buf);
-    //     lastWarnKey = entryKey;
-    //     return true;
-    //   }
-    // }
 
     if (advH == tH && advM == tM && lastKey != entryKey) {
       stopAndFlushAudio();                   // ← henti audio semasa
@@ -250,7 +338,6 @@ static int lastKeyCustom  = -1;
 static int lastKeyPerMin  = -1;
 static int lastWarnPrayer = -1;
 static int lastWarnCustom = -1;
-static int lastWarnAfterPrayer = -1; // peringatan selepas waktu masuk
 
 void runAnnounceModule(DateTime now) {
   int h      = now.hour();
@@ -279,26 +366,6 @@ void runAnnounceModule(DateTime now) {
       enqueueSpeech(buf);
       lastKeyPerMin = advSlot;
       played = true;
-    }
-  }
-
-  // Peringatan selepas waktu masuk (warnAfter) — berlaku X saat selepas masuk waktu
-  if (announcePrayer && !played) {
-    for (int i = 0; i < PRAYER_COUNT; i++) {
-      int wAfter = prayers[i].warnAfterSec;
-      if (wAfter <= 0) continue;
-      int tH = prayers[i].hour;
-      int tM = prayers[i].minute;
-      int entryKey = tH * 100 + tM;
-      int warnTarget = tH * 3600 + tM * 60 + wAfter;
-      // Tetingkap 60s — pasti dicetuskan dalam 1 kitaran minit
-      if (totSec >= warnTarget && totSec < warnTarget + 60 &&
-          lastWarnAfterPrayer != entryKey) {
-        beepDouble();
-        enqueueSpeech(prayers[i].announce);
-        lastWarnAfterPrayer = entryKey;
-        break;
-      }
     }
   }
 }

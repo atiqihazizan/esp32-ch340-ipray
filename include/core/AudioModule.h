@@ -6,22 +6,23 @@
 #include <SPIFFS.h>
 #include <WiFi.h>
 
-extern Audio  audio;
+extern Audio audio;
 extern String audioStatus;
 
 // Kod bahasa TTS masa jalan (boleh diubah dari /config/audio.json)
 char activeTtsLang[12] = {0};
 
-#define RAM_BUF_SIZE    (8 * 1024)
-#define PSRAM_BUF_SIZE  (psramFound() ? (32 * 1024) : 0)
+#define RAM_BUF_SIZE (8 * 1024)
+#define PSRAM_BUF_SIZE (psramFound() ? (32 * 1024) : 0)
 
-#define TTS_QUEUE_DEPTH  4
-#define TTS_TEXT_LEN     128
+#define TTS_QUEUE_DEPTH 4
+#define TTS_TEXT_LEN 128
 
 static QueueHandle_t ttsQueue = nullptr;
 
 void enqueueSpeech(const char *text) {
-  if (!ttsQueue) return;
+  if (!ttsQueue)
+    return;
   char buf[TTS_TEXT_LEN];
   strncpy(buf, text, TTS_TEXT_LEN - 1);
   buf[TTS_TEXT_LEN - 1] = '\0';
@@ -34,8 +35,9 @@ void enqueueSpeech(const char *text) {
 // supaya beep tidak tertunggu warning TTS yang masih main.
 // ================================================================
 void stopAndFlushAudio() {
-  audio.stopSong();              // hentikan stream/fail semasa
-  if (ttsQueue) xQueueReset(ttsQueue);  // buang yang masih dalam queue
+  audio.stopSong(); // hentikan stream/fail semasa
+  if (ttsQueue)
+    xQueueReset(ttsQueue); // buang yang masih dalam queue
   audioStatus = "IDLE";
 }
 
@@ -60,7 +62,7 @@ void AudioLoopTask(void *pvParameters) {
 
         // ── ROUTE: '/' di permulaan = fail SPIFFS ──
         if (ttsText[0] == '/') {
-          Serial.printf("Audio: play file %s\n", ttsText);
+          // Serial.printf("Audio: play file %s\n", ttsText);
           audio.connecttoFS(SPIFFS, ttsText);
         }
         // ── Selain itu = TTS (perlu WiFi) ──
@@ -100,23 +102,24 @@ void initAudio() {
   // ── VOLUME setup ──
   // setTone(GAIN_LP, GAIN_BP, GAIN_HP) — boost bass/mid/treble (-40..+6 dB)
   //   ↑ mid (BP) buat suara TTS lebih jelas & terasa kuat
-  audio.setTone(0, 4, 0);             // sedikit boost mid
+  audio.setTone(0, 4, 0); // sedikit boost mid
 
   audio.setVolume(MAX_VOL);
 
   audio.setBufsize(RAM_BUF_SIZE, PSRAM_BUF_SIZE);
 
-  if (psramFound())
-    Serial.printf("Audio: PSRAM OK — buf RAM=%d PSRAM=%d, vol=%d\n",
-                  RAM_BUF_SIZE, (int)PSRAM_BUF_SIZE, MAX_VOL);
-  else
-    Serial.printf("Audio: Tiada PSRAM — buf RAM=%d, vol=%d\n",
-                  RAM_BUF_SIZE, MAX_VOL);
+  if (psramFound()) {
+    // Serial.printf("Audio: PSRAM OK — buf RAM=%d PSRAM=%d, vol=%d\n",
+    // RAM_BUF_SIZE, (int)PSRAM_BUF_SIZE, MAX_VOL);
+  } else {
+    Serial.printf("Audio: Tiada PSRAM — buf RAM=%d, vol=%d\n", RAM_BUF_SIZE,
+                  MAX_VOL);
+  }
 }
 
 void audio_info(const char *info) {
-  Serial.print(F("Audio: "));
-  Serial.println(info);
+  // Serial.print(F("Audio: "));
+  // Serial.println(info);
 
   if (strstr(info, "mp3") || strstr(info, "speech"))
     audioStatus = "TALK";

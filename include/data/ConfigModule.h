@@ -251,8 +251,9 @@ static inline void configAnnouncePrayerDefaults(ConfigPrayerSlot *slots) {
       "It is now Mughrib prayer time",
       "It is now Ishaa prayer time",
   };
-  const int w[] = {3000, 0, 180, 180, 300, 60};
-  const int wa[] = {300, 0, 300, 300, 300, 300}; // warnAfterSec: 5 min lalai, Syuruk 0
+  // Selari PrayerData.h: warn_before / warn_after (saat)
+  const int w[] = {600, 0, 300, 300, 300, 180};
+  const int wa[] = {300, 0, 300, 300, 300, 300};
   for (int i = 0; i < CONFIG_PRAYER_SLOT_COUNT; i++) {
     configSafeCopy(slots[i].announce, sizeof(slots[i].announce), a[i]);
     slots[i].warnBefore = w[i];
@@ -268,7 +269,7 @@ static inline void configAnnounceCustomDefaults(ConfigAnnounce &x) {
   static const Row rows[] = {
       {6, 30, 0, "Masa sarapan pagi"},
       {12, 30, 0, "Masa makan tengah hari"},
-      {14, 21, 15, "Sudah lewat petang, tidak ada masa untuk sholat"},
+      {14, 21, 0, "Sudah lewat petang, tidak ada masa untuk sholat"},
       {22, 0, 0, "Sudah lewat malam"},
   };
   x.customSlotCount = (int)(sizeof(rows) / sizeof(rows[0]));

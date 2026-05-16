@@ -3,30 +3,37 @@
   "custom": false,
   "every_minute": false,
   "every_quarter": true,
+  "next_prayer_period_min": 5,
   "prayer_slots": [
     {
       "announce": "It is now Soobooh prayer time",
-      "warn_before": 30
+      "warn_before": 600,
+      "warn_after": 300
     },
     {
       "announce": "It is now Shooroock time",
-      "warn_before": 0
+      "warn_before": 0,
+      "warn_after": 0
     },
     {
       "announce": "It is now Zohor prayer time",
-      "warn_before": 30
+      "warn_before": 300,
+      "warn_after": 300
     },
     {
       "announce": "It is now Asarr prayer time",
-      "warn_before": 30
+      "warn_before": 300,
+      "warn_after": 300
     },
     {
       "announce": "It is now Mughrib prayer time",
-      "warn_before": 30
+      "warn_before": 300,
+      "warn_after": 300
     },
     {
       "announce": "It is now Ishaa prayer time",
-      "warn_before": 30
+      "warn_before": 180,
+      "warn_after": 300
     }
   ],
   "custom_slots": [
@@ -45,7 +52,7 @@
     {
       "hour": 14,
       "minute": 21,
-      "warn_before": 15,
+      "warn_before": 0,
       "text": "Sudah lewat petang, tidak ada masa untuk sholat"
     },
     {
