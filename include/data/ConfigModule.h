@@ -15,7 +15,6 @@
 
 #define CONFIG_PATH_WIFI "/config/wifi.json"
 #define CONFIG_PATH_TAKWIM "/config/takwim.json"
-#define CONFIG_PATH_DISPLAY "/config/display.json"
 #define CONFIG_PATH_AUDIO "/config/audio.json"
 #define CONFIG_PATH_ANNOUNCE "/config/announce.json"
 
@@ -24,7 +23,6 @@
 #define CFG_DEFAULT_TAKWIM_ZONE "PNG01"
 #define CFG_DEFAULT_TAKWIM_URL                                                                     \
   "https://www.e-solat.gov.my/index.php?r=esolatApi/takwimsolat&period=year&zone=%s"
-#define CFG_LAYOUT_DEFAULT 3 // LAYOUT_HOME_SLIDE
 
 // ================================================================
 // STRUCT CONFIG
@@ -38,10 +36,6 @@ struct ConfigWiFi {
 struct ConfigTakwim {
   char url[384]; // URL e-solat + parameter boleh panjang — elak truncation
   char zone[16];
-};
-
-struct ConfigDisplay {
-  int layout;
 };
 
 struct ConfigAudio {
@@ -137,13 +131,20 @@ inline bool initConfigStorage() {
     Serial.println(F("Config: SPIFFS gagal dimulakan"));
     return false;
   }
-  // Pastikan “direktori” /config wujud (VFS / mkdir — sesetengah board perlu ini)
+  // Pastikan "direktori" /config wujud (VFS / mkdir — sesetengah board perlu ini)
   SPIFFS.mkdir("/config");
+
+  // One-shot cleanup: display.json deprecated (no UI, no route, never read).
+  // This block can be removed in a future release after all devices have
+  // booted at least once with this firmware.
+  if (SPIFFS.exists("/config/display.json")) {
+    SPIFFS.remove("/config/display.json");
+    Serial.println(F("Config: display.json dipadam (deprecated)"));
+  }
 
   // Padam fail config yang benar‑benar kosong (hasil uploadfs) — sekali boot
   configPadamJsonKosongBoot(CONFIG_PATH_WIFI);
   configPadamJsonKosongBoot(CONFIG_PATH_TAKWIM);
-  configPadamJsonKosongBoot(CONFIG_PATH_DISPLAY);
   configPadamJsonKosongBoot(CONFIG_PATH_AUDIO);
   configPadamJsonKosongBoot(CONFIG_PATH_ANNOUNCE);
 
@@ -227,12 +228,6 @@ inline ConfigTakwim defaultTakwimConfig() {
   configSafeCopy(t.url, sizeof(t.url), CFG_DEFAULT_TAKWIM_URL);
   configSafeCopy(t.zone, sizeof(t.zone), CFG_DEFAULT_TAKWIM_ZONE);
   return t;
-}
-
-inline ConfigDisplay defaultDisplayConfig() {
-  ConfigDisplay d;
-  d.layout = CFG_LAYOUT_DEFAULT;
-  return d;
 }
 
 inline ConfigAudio defaultAudioConfig() {
@@ -362,27 +357,6 @@ inline bool saveTakwimConfig(const ConfigTakwim &cfg) {
   doc["zone"] = cfg.zone;
 
   return configWriteJsonFile("takwim", CONFIG_PATH_TAKWIM, doc);
-}
-
-// ================================================================
-// BACA / TULIS DISPLAY (layout = indeks ScreenLayout 0..4)
-// ================================================================
-inline ConfigDisplay getDisplayConfig() {
-  ConfigDisplay d = defaultDisplayConfig();
-  JsonDocument doc;
-  if (!configTryLoadJsonDoc(CONFIG_PATH_DISPLAY, "display.json parse gagal", doc))
-    return d;
-
-  if (!doc["layout"].isNull())
-    d.layout = (int)doc["layout"].as<int>();
-  return d;
-}
-
-inline bool saveDisplayConfig(const ConfigDisplay &cfg) {
-  JsonDocument doc;
-  doc["layout"] = cfg.layout;
-
-  return configWriteJsonFile("paparan", CONFIG_PATH_DISPLAY, doc);
 }
 
 // ================================================================

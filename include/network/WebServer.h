@@ -357,15 +357,36 @@ static inline void clockWebHandleNtp(WebServer &srv) {
   serializeJson(doc, out);
   clockWebSendJson(srv, ok ? 200 : 400, out);
 }
+// ================================================================
+// HANDLER: Upload takwim dari browser
+// POST /api/action/upload_takwim
+// Body: text/plain (format JAKIM-style, ~25-30 KB untuk 1 tahun)
+//
+// STRATEGI ATOMIK (3 lapisan perlindungan):
+//   1. Body LENGKAP perlu diterima dalam RAM dulu (HTTP layer)
+//   2. Validation: saiz + corak DD-MM-YYYY
+//   3. Write-then-rename: tulis tmp → sahkan → padam lama → rename
+//
+// FALLBACK SPIFFS sempit:
+//   Kalau SPIFFS.open(tmp) gagal, padam takwim.txt lama dahulu
+//   (body baru SELAMAT dalam RAM), cuba buka tmp sekali lagi.
+//
+// JIKA GAGAL DI MANA-MANA TITIK:
+//   • Sebelum tulis tmp     → takwim lama UNTOUCHED
+//   • Tulis tmp gagal tengah → tmp dipadam, lama UNTOUCHED (kecuali fallback dipicu)
+//   • Sahkan tmp gagal       → tmp dipadam, lama UNTOUCHED (kecuali fallback dipicu)
+//   • Rename gagal           → tmp dipadam, lama HILANG (rare — rename SPIFFS jarang gagal)
+// ================================================================
 static inline void clockWebHandleUploadTakwim(WebServer &srv) {
   // Lepaskan handle SPIFFS dari audio (elak bentrok semasa tulis)
   stopAndFlushAudio();
   delay(80);
 
-  // Body: text/plain — datang dalam arg "plain"
+  // Body diterima sepenuhnya oleh WebServer sebelum handler dipanggil.
+  // Kalau connection drop di tengah, WebServer reject sebelum sampai sini.
   String body = srv.arg("plain");
 
-  // ── Validation ringan ──
+  // ── Validation 1: saiz munasabah ──
   if (body.length() < 5000) {
     Serial.printf("Web: upload takwim ditolak — saiz=%u terlalu kecil\n",
                   (unsigned)body.length());
@@ -379,7 +400,7 @@ static inline void clockWebHandleUploadTakwim(WebServer &srv) {
     return;
   }
 
-  // ── Cari corak DD-MM-YYYY dalam 1 KB pertama ──
+  // ── Validation 2: corak DD-MM-YYYY dalam 1 KB pertama ──
   bool hasDateLine = false;
   int scanLimit = body.length() < 1024 ? body.length() : 1024;
   for (int i = 0; i < scanLimit - 10; i++) {
@@ -395,27 +416,41 @@ static inline void clockWebHandleUploadTakwim(WebServer &srv) {
     }
   }
   if (!hasDateLine) {
-    Serial.println(
-        F("Web: upload takwim ditolak — corak DD-MM-YYYY tidak dijumpai"));
+    Serial.println(F("Web: upload takwim ditolak — corak DD-MM-YYYY tidak dijumpai"));
     clockWebSendJson(srv, 400, "{\"ok\":false,\"err\":\"format_tidak_sah\"}");
     return;
   }
 
-  // ── Tulis ke /takwim.txt (atomik: padam dulu kemudian tulis baru) ──
-  invalidateTakwimCache();
+  // ================================================================
+  // ATOMIK WRITE: tulis ke tmp dulu, sahkan, baru rename
+  // ================================================================
+  const char *tmpPath = "/takwim_new.tmp";
 
-  if (SPIFFS.exists("/takwim.txt") && !SPIFFS.remove("/takwim.txt")) {
-    Serial.println(F("Web: amaran — gagal padam /takwim.txt lama"));
+  // Buang tmp lama (kalau ada dari upload gagal sebelumnya)
+  if (SPIFFS.exists(tmpPath)) SPIFFS.remove(tmpPath);
+
+  // ── Step 1: cuba buka tmp untuk tulis ──
+  File f = SPIFFS.open(tmpPath, "w");
+
+  // Fallback: SPIFFS sempit — padam takwim lama untuk dapat ruang.
+  // (body BARU masih SELAMAT dalam RAM)
+  if (!f) {
+    Serial.println(F("Web: SPIFFS sempit — padam takwim lama untuk dapat ruang"));
+    invalidateTakwimCache();
+    SPIFFS.remove("/takwim.txt");
+    f = SPIFFS.open(tmpPath, "w");
   }
 
-  File f = SPIFFS.open("/takwim.txt", "w");
   if (!f) {
-    Serial.println(
-        F("Web: ERROR upload takwim — tidak boleh buka /takwim.txt"));
+    size_t tb = SPIFFS.totalBytes(), ub = SPIFFS.usedBytes();
+    unsigned long bebas = (tb > ub) ? (unsigned long)(tb - ub) : 0UL;
+    Serial.printf("Web: ERROR upload takwim — tidak boleh buka tmp (bebas %lu bait)\n",
+                  bebas);
     clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"buka_gagal\"}");
     return;
   }
 
+  // ── Step 2: tulis keseluruhan body ke tmp ──
   size_t written = f.print(body);
   f.flush();
   f.close();
@@ -423,11 +458,74 @@ static inline void clockWebHandleUploadTakwim(WebServer &srv) {
   if (written < (size_t)body.length()) {
     Serial.printf("Web: ERROR upload takwim — tulis %u/%u bait sahaja\n",
                   (unsigned)written, (unsigned)body.length());
+    SPIFFS.remove(tmpPath);
     clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"tulis_tak_lengkap\"}");
     return;
   }
 
-  // ── Reload data takwim baru ──
+  // ── Step 3: sahkan tmp boleh dibaca semula ──
+  File ver = SPIFFS.open(tmpPath, "r");
+  if (!ver) {
+    SPIFFS.remove(tmpPath);
+    Serial.println(F("Web: ERROR — tmp tak boleh dibaca semula"));
+    clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"baca_semula_gagal\"}");
+    return;
+  }
+  size_t verSize = ver.size();
+
+  if (verSize != (size_t)body.length()) {
+    ver.close();
+    SPIFFS.remove(tmpPath);
+    Serial.printf("Web: ERROR — saiz tmp tak padan (%u vs %u)\n",
+                  (unsigned)verSize, (unsigned)body.length());
+    clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"saiz_tmp_tak_padan\"}");
+    return;
+  }
+
+  // Sahkan kandungan tmp ada corak DD-MM-YYYY (selari takwimTmpFileLooksValid)
+  ver.seek(0, SeekSet);
+  char buf[512];
+  int rd = ver.readBytes(buf, sizeof(buf) - 1);
+  ver.close();
+  buf[rd >= 0 ? rd : 0] = '\0';
+
+  bool tmpValid = false;
+  if (rd >= 40) {
+    if (strstr(buf, "HIJRI_DATA") != nullptr) {
+      tmpValid = true;
+    } else {
+      for (int i = 0; i + 10 < rd; i++) {
+        if (buf[i] >= '0' && buf[i] <= '9' && buf[i + 3] == '-' &&
+            buf[i + 6] == '-') {
+          tmpValid = true;
+          break;
+        }
+      }
+    }
+  }
+  if (!tmpValid) {
+    SPIFFS.remove(tmpPath);
+    Serial.println(F("Web: ERROR — tmp gagal validation kandungan"));
+    clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"validation_tmp_gagal\"}");
+    return;
+  }
+
+  // ── Step 4: tmp OK, sekarang baru ganti takwim lama ──
+  invalidateTakwimCache();
+
+  if (SPIFFS.exists("/takwim.txt") && !SPIFFS.remove("/takwim.txt")) {
+    Serial.println(F("Web: amaran — gagal padam /takwim.txt lama"));
+    // Teruskan — rename biasanya boleh overwrite
+  }
+
+  if (!SPIFFS.rename(tmpPath, "/takwim.txt")) {
+    Serial.println(F("Web: ERROR — rename tmp → takwim.txt gagal"));
+    SPIFFS.remove(tmpPath);
+    clockWebSendJson(srv, 500, "{\"ok\":false,\"err\":\"rename_gagal\"}");
+    return;
+  }
+
+  // ── Step 5: reload cache takwim dengan data baru ──
   readTakwimZoneName();
   DateTime now = clockNowDateTime();
   loadTakwimForDate(now.day(), now.month(), now.year());

@@ -159,10 +159,19 @@ code { font-size: 12px; color: #adf; }
       <h2>Prayer timetable</h2>
       <label>Download URL (template) — use <code>%ZONE%</code> or <code>%s</code></label>
       <input id="turl" placeholder="https://…">
-      <label>Zone (fetched from JAKIM in the browser)</label>
-      <select id="tzone"></select>
+      <label>
+        Zone
+        <button type="button" id="btnReloadZones"
+                style="float:right;background:none;border:none;color:#6cf;
+                       font-size:12px;cursor:pointer;padding:0;width:auto;"
+                onclick="loadZones(true)">↻ Reload list</button>
+      </label>
+      <select id="tzone">
+        <option value="">Loading zones…</option>
+      </select>
+      <div id="zoneStatus" style="font-size:11px;color:#888;margin-top:4px;min-height:1.2em;"></div>
       <input type="hidden" id="takwimContent">
-      <button type="button" class="btn secondary" onclick="fetchTakwim()">
+      <button type="button" class="btn secondary" onclick="fetchTakwim()" id="btnFetchTakwim" disabled>
         1. Fetch timetable from JAKIM (browser)
       </button>
       <button type="button" class="btn" onclick="uploadTakwim()" id="btnUpload" disabled>
@@ -219,16 +228,16 @@ function showPage(name) {
   if (page) page.classList.add('active');
   if (nav)  nav.classList.add('active');
   try { localStorage.setItem('cfgPage', name); } catch (e) {}
+
+  // Lazy-load zones bila page takwim dibuka kali pertama
+  if (name === 'takwim' && !zonesLoaded) {
+    loadZones(false);
+  }
 }
 
 document.querySelectorAll('.nav-item').forEach(el => {
   el.addEventListener('click', () => showPage(el.dataset.page));
 });
-
-try {
-  const last = localStorage.getItem('cfgPage');
-  if (last) showPage(last);
-} catch (e) {}
 
 // ================================================================
 // HIJRI_DATA - hardcoded constant (same as existing takwim.txt)
@@ -236,69 +245,111 @@ try {
 const HIJRI_DATA = "2B75A5B654A76A55D5AA5CA56DD495DA525DAA4DD5AA6A95B652576A4B76C93665ABAC56D94A5DA92DD525BBA49BB255D52A6DA5B65497F4926ED25669ABB495DA525DD22BBA495BA9ABB4955A4B6DA936E916EDA4AED4966A4BB5A5DAA49BB493BA525BAA4DB5AA6A556DD256EA4A6DA92ED5AA6A55B54A5BA92BB525BB549BAA55D52A6DA5AED496EC925DD255D92A6D95B6525BB24B7A493729";
 
 // ================================================================
-// Zone list (dedupe + grouped by state)
+// Zone list — fetched dynamically from waktusolat.app API
+// Primary:  https://api.waktusolat.app/zones (mptwaktusolat project)
+// Fallback: https://mpt-server.vercel.app/api/zones
+// Schema:   [{ jakimCode, negeri, daerah }, ...]
+//
+// Stored at runtime as: [{ code, state, locations }, ...]
+// Cached in memory only (no SPIFFS persistence).
 // ================================================================
-const ZONES = [
-  { code: "JHR01", state: "Johor", locations: "Pulau Aur, Pemanggil" },
-  { code: "JHR02", state: "Johor", locations: "Kota Tinggi, Mersing, Johor Bahru" },
-  { code: "JHR03", state: "Johor", locations: "Kluang, Pontian" },
-  { code: "JHR04", state: "Johor", locations: "Batu Pahat, Muar, Segamat, Gemas" },
-  { code: "KDH01", state: "Kedah", locations: "Kota Setar, Kubang Pasu, Pokok Sena" },
-  { code: "KDH02", state: "Kedah", locations: "Pendang, Kuala Muda, Yan" },
-  { code: "KDH03", state: "Kedah", locations: "Padang Terap, Sik" },
-  { code: "KDH04", state: "Kedah", locations: "Baling" },
-  { code: "KDH05", state: "Kedah", locations: "Kulim, Bandar Bahru" },
-  { code: "KDH06", state: "Kedah", locations: "Langkawi" },
-  { code: "KDH07", state: "Kedah", locations: "Gunung Jerai" },
-  { code: "KTN01", state: "Kelantan", locations: "Kota Bahru, Bachok, Pasir Puteh, Tumpat, Pasir Mas, Tanah Merah, Machang, Kuala Krai, Mukim Chiku" },
-  { code: "KTN02", state: "Kelantan", locations: "Jeli, Gua Musang, Mukim Galas, Bertam" },
-  { code: "MLK01", state: "Melaka", locations: "Bandar Melaka, Alor Gajah, Jasin, Masjid Tanah, Merlimau, Nyalas" },
-  { code: "NGS01", state: "Negeri Sembilan", locations: "Jempol, Tampin" },
-  { code: "NGS02", state: "Negeri Sembilan", locations: "Kuala Pilah, Jelebu, Rembau" },
-  { code: "NGS03", state: "Negeri Sembilan", locations: "Port Dickson, Seremban" },
-  { code: "PHG01", state: "Pahang", locations: "Pulau Tioman" },
-  { code: "PHG02", state: "Pahang", locations: "Kuantan, Pekan, Rompin, Muadzam Shah" },
-  { code: "PHG03", state: "Pahang", locations: "Maran, Chenor, Temerloh, Bera, Jerantut, Jengka" },
-  { code: "PHG04", state: "Pahang", locations: "Bentong, Raub, Kuala Lipis" },
-  { code: "PHG05", state: "Pahang", locations: "Genting Sempah, Janda Baik, Bukit Tinggi" },
-  { code: "PHG06", state: "Pahang", locations: "Bukit Fraser, Genting Highlands, Cameron Highlands" },
-  { code: "PRK01", state: "Perak", locations: "Tapah, Slim River, Tanjung Malim" },
-  { code: "PRK02", state: "Perak", locations: "Ipoh, Batu Gajah, Kampar, Sungai Siput, Kuala Kangsar" },
-  { code: "PRK03", state: "Perak", locations: "Pengkalan Hulu, Grik, Lenggong" },
-  { code: "PRK04", state: "Perak", locations: "Temengor, Belum" },
-  { code: "PRK05", state: "Perak", locations: "Teluk Intan, Bagan Datuk, Kampung Gajah, Seri Iskandar, Beruas, Parit, Lumut, Sitiawan, Pulau Pangkor" },
-  { code: "PRK06", state: "Perak", locations: "Selama, Taiping, Bagan Serai, Parit Buntar" },
-  { code: "PRK07", state: "Perak", locations: "Bukit Larut" },
-  { code: "PLS01", state: "Perlis", locations: "Kangar, Padang Besar, Arau" },
-  { code: "PNG01", state: "Pulau Pinang", locations: "Pulau Pinang" },
-  { code: "SBH01", state: "Sabah", locations: "Sandakan Timur, Bukit Garam, Semawang, Temanggong, Tambisan, Sukau" },
-  { code: "SBH02", state: "Sabah", locations: "Pinangah, Terusan, Beluran, Kuamut, Telupid, Sandakan Barat" },
-  { code: "SBH03", state: "Sabah", locations: "Lahad Datu, Kunak, Silabukan, Tungku, Sahabat, Semporna, Tawau Timur" },
-  { code: "SBH04", state: "Sabah", locations: "Bandar Tawau, Balong, Merotai, Kalabakan, Tawau Barat" },
-  { code: "SBH05", state: "Sabah", locations: "Kudat, Kota Marudu, Pitas, Pulau Banggi" },
-  { code: "SBH06", state: "Sabah", locations: "Gunung Kinabalu" },
-  { code: "SBH07", state: "Sabah", locations: "Papar, Ranau, Kota Belud, Tuaran, Penampang, Kota Kinabalu, Putatan, Pantai Barat" },
-  { code: "SBH08", state: "Sabah", locations: "Pensiangan, Keningau, Tambunan, Nabawan" },
-  { code: "SBH09", state: "Sabah", locations: "Sipitang, Membakut, Beaufort, Kuala Penyu, Weston, Tenom, Long Pa Sia" },
-  { code: "SWK01", state: "Sarawak", locations: "Limbang, Sundar, Terusan, Lawas" },
-  { code: "SWK02", state: "Sarawak", locations: "Niah, Belaga, Sibuti, Miri, Bekenu, Marudi" },
-  { code: "SWK03", state: "Sarawak", locations: "Song, Balingian, Sebauh, Bintulu, Tatau, Kapit" },
-  { code: "SWK04", state: "Sarawak", locations: "Igan, Kanowit, Sibu, Dalat, Oya" },
-  { code: "SWK05", state: "Sarawak", locations: "Belawai, Matu, Daro, Sarikei, Julau, Bitangor, Rajang" },
-  { code: "SWK06", state: "Sarawak", locations: "Kabong, Lingga, Sri Aman, Engkelili, Betong, Spaoh, Pusa, Saratok, Roban, Debak" },
-  { code: "SWK07", state: "Sarawak", locations: "Samarahan, Simunjan, Serian, Sebuyau, Meludam" },
-  { code: "SWK08", state: "Sarawak", locations: "Kuching, Bau, Lundu, Sematan" },
-  { code: "SWK09", state: "Sarawak", locations: "Zon Khas" },
-  { code: "SGR01", state: "Selangor", locations: "Gombak, Hulu Selangor, Rawang, Hulu Langat, Sepang, Petaling, Shah Alam" },
-  { code: "SGR02", state: "Selangor", locations: "Sabak Bernam, Kuala Selangor" },
-  { code: "SGR03", state: "Selangor", locations: "Klang, Kuala Langat" },
-  { code: "TRG01", state: "Terengganu", locations: "Kuala Terengganu, Marang, Kuala Nerus" },
-  { code: "TRG02", state: "Terengganu", locations: "Besut, Setiu" },
-  { code: "TRG03", state: "Terengganu", locations: "Hulu Terengganu" },
-  { code: "TRG04", state: "Terengganu", locations: "Kemaman, Dungun" },
-  { code: "WLY01", state: "Kuala Lumpur, Putrajaya", locations: "Kuala Lumpur, Putrajaya" },
-  { code: "WLY02", state: "Labuan", locations: "Labuan" }
-];
+const ZONES_API_PRIMARY  = 'https://api.waktusolat.app/zones';
+const ZONES_API_FALLBACK = 'https://mpt-server.vercel.app/api/zones';
+
+let ZONES = [];           // diisi oleh loadZones()
+let zonesLoaded = false;  // elak fetch berulang
+
+function setZoneStatus(text, kind) {
+  const el = document.getElementById('zoneStatus');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.color = kind === 'err' ? '#f88' : (kind === 'ok' ? '#9d8' : '#888');
+}
+
+// Cuba primary; jika gagal cuba fallback. Return array atau throw.
+async function fetchZonesWithFallback() {
+  try {
+    const r = await fetch(ZONES_API_PRIMARY);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch (ePrim) {
+    console.warn('Primary zones API failed, trying fallback:', ePrim);
+    const r = await fetch(ZONES_API_FALLBACK);
+    if (!r.ok) throw new Error('fallback HTTP ' + r.status);
+    return await r.json();
+  }
+}
+
+async function loadZones(forceReload) {
+  if (zonesLoaded && !forceReload) return;
+  const sel = document.getElementById('tzone');
+  if (sel) sel.innerHTML = '<option value="">Loading zones…</option>';
+  document.getElementById('btnFetchTakwim').disabled = true;
+  setZoneStatus('⏳ Loading zone list…');
+
+  try {
+    const data = await fetchZonesWithFallback();
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error('empty/invalid response');
+    }
+    // Map ke struktur dalaman { code, state, locations }
+    ZONES = data.map(z => ({
+      code: z.jakimCode || z.code || '',
+      state: z.negeri || z.state || '—',
+      locations: z.daerah || z.locations || ''
+    })).filter(z => z.code);
+
+    zonesLoaded = true;
+    setZoneStatus(`✓ ${ZONES.length} zones loaded`, 'ok');
+    // Guna zone semasa dari config kalau ada (disimpan dalam dataset)
+    const cur = document.getElementById('tzone').dataset.currentZone || 'PNG01';
+    populateZoneSelect(cur);
+    document.getElementById('btnFetchTakwim').disabled = false;
+  } catch (e) {
+    setZoneStatus('✗ Failed to load zones: ' + e.message +
+                  ' — pick code manually', 'err');
+    // Fallback dropdown: senarai code sahaja (tanpa nama lokasi)
+    if (sel) {
+      sel.innerHTML = '';
+      const opts = [
+        'JHR01','JHR02','JHR03','JHR04',
+        'KDH01','KDH02','KDH03','KDH04','KDH05','KDH06','KDH07',
+        'KTN01','KTN03','MLK01','NGS01','NGS02','NGS03',
+        'PHG01','PHG02','PHG03','PHG04','PHG05','PHG06','PHG07',
+        'PRK01','PRK02','PRK03','PRK04','PRK05','PRK06','PRK07',
+        'PLS01','PNG01',
+        'SBH01','SBH02','SBH03','SBH04','SBH05','SBH06','SBH07','SBH08','SBH09',
+        'SWK01','SWK02','SWK03','SWK04','SWK05','SWK06','SWK07','SWK08','SWK09',
+        'SGR01','SGR02','SGR03',
+        'TRG01','TRG02','TRG03','TRG04',
+        'WLY01','WLY02'
+      ];
+      const cur = document.getElementById('tzone').dataset.currentZone || 'PNG01';
+      for (const code of opts) {
+        const op = document.createElement('option');
+        op.value = code;
+        op.textContent = code;
+        if (code === cur) op.selected = true;
+        sel.appendChild(op);
+      }
+      document.getElementById('btnFetchTakwim').disabled = false;
+      zonesLoaded = true; // elak fetch API berulang bila fallback manual dipakai
+    }
+  }
+}
+
+try {
+  const last = localStorage.getItem('cfgPage');
+  if (last) showPage(last);
+} catch (e) {}
+
+// Kalau Takwim page aktif pada init (kerana localStorage atau default),
+// trigger loadZones — pastikan ia berjalan walaupun showPage() di atas
+// dipanggil sebelum DOM siap.
+setTimeout(() => {
+  const takwimActive = document.getElementById('page-takwim').classList.contains('active');
+  if (takwimActive && !zonesLoaded) loadZones(false);
+}, 50);
 
 // ================================================================
 // HELPERS
@@ -327,7 +378,7 @@ function formatHijri(s) {
 
 function buildHeader(zoneCode) {
   const z = ZONES.find((x) => x.code === zoneCode);
-  if (!z) return zoneCode;
+  if (!z || !z.locations) return zoneCode;
   return `${zoneCode} - ${z.locations}`;
 }
 
@@ -378,19 +429,35 @@ async function reloadCfgJikaOk(responseText) {
 
 function populateZoneSelect(currentZone) {
   const sel = document.getElementById('tzone');
+  if (!sel) return;
+  // Simpan currentZone supaya loadZones() boleh tahu pilihan asal
+  if (currentZone) sel.dataset.currentZone = currentZone;
   sel.innerHTML = '';
+
+  if (!ZONES || ZONES.length === 0) {
+    const op = document.createElement('option');
+    op.value = '';
+    op.textContent = '(zones not loaded yet)';
+    sel.appendChild(op);
+    return;
+  }
+
   const byState = {};
   for (const z of ZONES) {
-    if (!byState[z.state]) byState[z.state] = [];
-    byState[z.state].push(z);
+    const st = z.state || '—';
+    if (!byState[st]) byState[st] = [];
+    byState[st].push(z);
   }
-  for (const state of Object.keys(byState)) {
+  // Susun negeri secara alphabetical untuk konsisten
+  const states = Object.keys(byState).sort();
+
+  for (const state of states) {
     const og = document.createElement('optgroup');
     og.label = state;
     for (const z of byState[state]) {
       const op = document.createElement('option');
       op.value = z.code;
-      op.textContent = `${z.code} — ${z.locations}`;
+      op.textContent = z.locations ? `${z.code} — ${z.locations}` : z.code;
       if (z.code === currentZone) op.selected = true;
       og.appendChild(op);
     }
@@ -453,7 +520,11 @@ async function loadCfg() {
     document.getElementById('whost').value = j.wifi.hostname || '';
     document.getElementById('wpass').value = '';
     document.getElementById('turl').value = j.takwim.url || '';
-    populateZoneSelect(j.takwim.zone || 'PNG01');
+    // Simpan zone semasa supaya populateZoneSelect tanda betul selepas API balas
+    const tzSel = document.getElementById('tzone');
+    if (tzSel) tzSel.dataset.currentZone = j.takwim.zone || 'PNG01';
+    // Hanya populate kalau zones sudah ada; kalau belum, loadZones() yang handle
+    if (zonesLoaded) populateZoneSelect(j.takwim.zone || 'PNG01');
     document.getElementById('vol').value = j.audio.volume ?? 21;
     document.getElementById('lang').value = j.audio.tts_lang || '';
     document.getElementById('annp').checked = !!j.announce.prayer;
@@ -492,7 +563,6 @@ async function loadCfg() {
     }
     showMsg('');
   } catch (e) {
-    populateZoneSelect('PNG01');
     showMsg('config: ' + e);
   }
 }
