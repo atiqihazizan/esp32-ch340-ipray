@@ -8,7 +8,8 @@
 body{font-family:system-ui,sans-serif;max-width:520px;margin:12px auto;padding:0 8px;background:#111;color:#eee}
 h2{border-bottom:1px solid #444;padding-bottom:4px;font-size:1.1rem}
 label{display:block;margin:6px 0 2px;font-size:14px}
-input,select{width:100%;padding:8px;background:#222;border:1px solid #555;color:#eee;box-sizing:border-box}
+input,select,textarea{width:100%;padding:8px;background:#222;border:1px solid #555;color:#eee;box-sizing:border-box}
+.sub{font-size:0.95rem;color:#9ab;margin:14px 0 6px}
 .row{display:flex;gap:10px;margin:8px 0}
 .btn{background:#264;padding:10px;border:none;color:#fff;width:100%;cursor:pointer;margin:4px 0;border-radius:4px;font-size:15px}
 .btn.secondary{background:#444}
@@ -57,10 +58,19 @@ Configurations
 <button type="button" class="btn secondary" onclick="saveAud()">Save audio (apply now)</button>
 
 <h2>Announcements</h2>
-<label><input id="annp" type="checkbox" class="chk">Prayer</label>
+<label><input id="annp" type="checkbox" class="chk">Prayer times</label>
 <label><input id="annc" type="checkbox" class="chk">Custom schedule</label>
 <label><input id="annm" type="checkbox" class="chk">Every minute</label>
 <label><input id="annq" type="checkbox" class="chk">Quarter-hour</label>
+<label>Tempoh waktu semasa (minit) — OLED kekal tunjuk waktu semasa sebelum beralih ke waktu seterusnya (lalai 5)</label>
+<input id="annPeriod" type="number" min="0" max="60" value="5">
+
+<p class="sub">Prayer — TTS phrase &amp; warning lead (seconds before adhan; 0 = off)</p>
+<div id="prayerSlotsMount"></div>
+
+<p class="sub">Custom — time (24h), text, optional warn_before (seconds). Leave text blank to skip a row.</p>
+<div id="customSlotsMount"></div>
+
 <button type="button" class="btn" onclick="saveAnn()">Save announcements</button>
 
 <h2>Actions</h2>
@@ -249,6 +259,45 @@ function populateZoneSelect(currentZone) {
   }
 }
 
+const PRAYER_SLOT_LABELS = ['Subuh', 'Syuruk', 'Zohor', 'Asar', 'Maghrib', 'Isyak'];
+const CUSTOM_SLOT_ROWS = 8;
+
+function buildAnnounceForms() {
+  const pm = document.getElementById('prayerSlotsMount');
+  if (!pm) return;
+  pm.innerHTML = '';
+  for (let i = 0; i < PRAYER_SLOT_LABELS.length; i++) {
+    const d = document.createElement('div');
+    d.style.marginBottom = '12px';
+    d.innerHTML =
+      '<label>' + PRAYER_SLOT_LABELS[i] + ' — teks TTS</label>' +
+      '<textarea id="ps_ann_' + i + '" rows="2" maxlength="127"></textarea>' +
+      '<div class="row">' +
+      '<div style="flex:1"><label>Amaran awal (saat sebelum, 0 = mati)</label>' +
+      '<input id="ps_wb_' + i + '" type="number" min="0" max="3600" value="0"></div>' +
+      '<div style="flex:1"><label>Peringatan selepas masuk (saat, 0 = mati)</label>' +
+      '<input id="ps_wa_' + i + '" type="number" min="0" max="3600" value="300"></div>' +
+      '</div>';
+    pm.appendChild(d);
+  }
+  const cm = document.getElementById('customSlotsMount');
+  if (!cm) return;
+  cm.innerHTML = '';
+  for (let i = 0; i < CUSTOM_SLOT_ROWS; i++) {
+    const d = document.createElement('div');
+    d.style.marginBottom = '12px';
+    d.innerHTML =
+      '<div class="row">' +
+      '<div style="flex:1"><label>Jam</label><input id="cs_h_' + i + '" type="number" min="0" max="23" value="0"></div>' +
+      '<div style="flex:1"><label>Minit</label><input id="cs_m_' + i + '" type="number" min="0" max="59" value="0"></div>' +
+      '<div style="flex:1"><label>Amaran (s)</label><input id="cs_wb_' + i + '" type="number" min="0" max="3600" value="0"></div>' +
+      '</div>' +
+      '<label>Teks (kosongkan untuk abaikan baris ini)</label>' +
+      '<textarea id="cs_txt_' + i + '" rows="2" maxlength="127"></textarea>';
+    cm.appendChild(d);
+  }
+}
+
 // ================================================================
 // Load
 // ================================================================
@@ -276,6 +325,39 @@ async function loadCfg() {
     document.getElementById('annc').checked = !!j.announce.custom;
     document.getElementById('annm').checked = !!j.announce.every_minute;
     document.getElementById('annq').checked = !!j.announce.every_quarter;
+    document.getElementById('annPeriod').value = j.announce.next_prayer_period_min ?? 5;
+
+    const ps = j.announce.prayer_slots;
+    if (Array.isArray(ps)) {
+      for (let i = 0; i < PRAYER_SLOT_LABELS.length; i++) {
+        const elA = document.getElementById('ps_ann_' + i);
+        const elW = document.getElementById('ps_wb_' + i);
+        const elWA = document.getElementById('ps_wa_' + i);
+        if (!elA || !elW) continue;
+        if (ps[i]) {
+          elA.value = ps[i].announce != null ? String(ps[i].announce) : '';
+          elW.value = ps[i].warn_before != null ? ps[i].warn_before : 0;
+          if (elWA) elWA.value = ps[i].warn_after != null ? ps[i].warn_after : 300;
+        }
+      }
+    }
+    const cs = j.announce.custom_slots;
+    for (let i = 0; i < CUSTOM_SLOT_ROWS; i++) {
+      const h = document.getElementById('cs_h_' + i);
+      if (!h) continue;
+      if (Array.isArray(cs) && cs[i]) {
+        document.getElementById('cs_h_' + i).value = cs[i].hour ?? 0;
+        document.getElementById('cs_m_' + i).value = cs[i].minute ?? 0;
+        document.getElementById('cs_wb_' + i).value = cs[i].warn_before ?? 0;
+        document.getElementById('cs_txt_' + i).value =
+          cs[i].text != null ? String(cs[i].text) : '';
+      } else {
+        document.getElementById('cs_h_' + i).value = 0;
+        document.getElementById('cs_m_' + i).value = 0;
+        document.getElementById('cs_wb_' + i).value = 0;
+        document.getElementById('cs_txt_' + i).value = '';
+      }
+    }
     showMsg('');
   } catch (e) {
     populateZoneSelect('PNG01');
@@ -382,11 +464,33 @@ async function saveAud() {
   await reloadCfgJikaOk(t);
 }
 async function saveAnn() {
+  const prayer_slots = [];
+  for (let i = 0; i < PRAYER_SLOT_LABELS.length; i++) {
+    prayer_slots.push({
+      announce: document.getElementById('ps_ann_' + i).value,
+      warn_before: parseInt(document.getElementById('ps_wb_' + i).value, 10) || 0,
+      warn_after: parseInt(document.getElementById('ps_wa_' + i).value, 10) || 0
+    });
+  }
+  const custom_slots = [];
+  for (let i = 0; i < CUSTOM_SLOT_ROWS; i++) {
+    const txt = document.getElementById('cs_txt_' + i).value.trim();
+    if (!txt) continue;
+    custom_slots.push({
+      hour: Math.min(23, Math.max(0, parseInt(document.getElementById('cs_h_' + i).value, 10) || 0)),
+      minute: Math.min(59, Math.max(0, parseInt(document.getElementById('cs_m_' + i).value, 10) || 0)),
+      warn_before: parseInt(document.getElementById('cs_wb_' + i).value, 10) || 0,
+      text: txt
+    });
+  }
   const r = await postJson('/api/config/announce', {
     prayer: document.getElementById('annp').checked,
     custom: document.getElementById('annc').checked,
     every_minute: document.getElementById('annm').checked,
-    every_quarter: document.getElementById('annq').checked
+    every_quarter: document.getElementById('annq').checked,
+    next_prayer_period_min: parseInt(document.getElementById('annPeriod').value, 10) || 5,
+    prayer_slots,
+    custom_slots
   });
   const t = await r.text();
   showMsg(t);
@@ -405,6 +509,7 @@ async function doRb() {
   showMsg('Reboot requested…');
 }
 
+buildAnnounceForms();
 loadCfg().then(loadStatus);
 </script>
 </body>

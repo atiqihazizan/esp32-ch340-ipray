@@ -83,7 +83,7 @@ static inline void clockWebHandleStatus(WebServer &srv) {
   doc["takwim_ok"] = takwimTodayValid();
   doc["takwim_zon"] = takwimZoneNameStr();
 
-  DateTime t = rtc.now();
+  DateTime t = clockNowDateTime();
   char iso[36];
   snprintf(iso, sizeof(iso), "%04d-%02d-%02dT%02d:%02d:%02d", t.year(),
            t.month(), t.day(), t.hour(), t.minute(), t.second());
@@ -112,6 +112,23 @@ static inline void clockWebHandleGetConfig(WebServer &srv) {
   doc["announce"]["custom"] = an.custom;
   doc["announce"]["every_minute"] = an.everyMinute;
   doc["announce"]["every_quarter"] = an.everyQuarter;
+  doc["announce"]["next_prayer_period_min"] = an.nextPrayerPeriodMin;
+
+  JsonArray psOut = doc["announce"]["prayer_slots"].to<JsonArray>();
+  for (int i = 0; i < CONFIG_PRAYER_SLOT_COUNT; i++) {
+    JsonObject slot = psOut.add<JsonObject>();
+    slot["announce"] = an.prayerSlots[i].announce;
+    slot["warn_before"] = an.prayerSlots[i].warnBefore;
+    slot["warn_after"] = an.prayerSlots[i].warnAfterSec;
+  }
+  JsonArray csOut = doc["announce"]["custom_slots"].to<JsonArray>();
+  for (int i = 0; i < an.customSlotCount && i < CONFIG_CUSTOM_SLOT_MAX; i++) {
+    JsonObject slot = csOut.add<JsonObject>();
+    slot["hour"] = an.customSlots[i].hour;
+    slot["minute"] = an.customSlots[i].minute;
+    slot["warn_before"] = an.customSlots[i].warnBefore;
+    slot["text"] = an.customSlots[i].text;
+  }
 
   String out;
   serializeJson(doc, out);
@@ -269,9 +286,54 @@ static inline void clockWebHandlePostAnnounce(WebServer &srv) {
     an.everyMinute = doc["every_minute"].as<bool>();
   if (!doc["every_quarter"].isNull())
     an.everyQuarter = doc["every_quarter"].as<bool>();
+  if (!doc["next_prayer_period_min"].isNull()) {
+    int p = doc["next_prayer_period_min"].as<int>();
+    if (p < 0) p = 0;
+    if (p > 60) p = 60;
+    an.nextPrayerPeriodMin = p;
+  }
 
-  applyAnnounceRuntimeConfig(an.prayer, an.custom, an.everyMinute,
-                             an.everyQuarter);
+  JsonArray psIn = doc["prayer_slots"].as<JsonArray>();
+  if (!psIn.isNull()) {
+    for (size_t i = 0; i < CONFIG_PRAYER_SLOT_COUNT && i < psIn.size(); i++) {
+      JsonObject o = psIn[i];
+      if (!o["announce"].isNull()) {
+        const char *s = o["announce"];
+        if (s)
+          configSafeCopy(an.prayerSlots[i].announce,
+                         sizeof(an.prayerSlots[i].announce), s);
+      }
+      if (!o["warn_before"].isNull())
+        an.prayerSlots[i].warnBefore = o["warn_before"].as<int>();
+      if (!o["warn_after"].isNull())
+        an.prayerSlots[i].warnAfterSec = o["warn_after"].as<int>();
+    }
+  }
+
+  JsonArray csIn = doc["custom_slots"].as<JsonArray>();
+  if (!csIn.isNull()) {
+    int n = (int)csIn.size();
+    if (n > CONFIG_CUSTOM_SLOT_MAX)
+      n = CONFIG_CUSTOM_SLOT_MAX;
+    an.customSlotCount = n;
+    for (int i = 0; i < n; i++) {
+      JsonObject o = csIn[i];
+      if (!o["hour"].isNull())
+        an.customSlots[i].hour = o["hour"].as<int>();
+      if (!o["minute"].isNull())
+        an.customSlots[i].minute = o["minute"].as<int>();
+      if (!o["warn_before"].isNull())
+        an.customSlots[i].warnBefore = o["warn_before"].as<int>();
+      if (!o["text"].isNull()) {
+        const char *s = o["text"];
+        if (s)
+          configSafeCopy(an.customSlots[i].text,
+                         sizeof(an.customSlots[i].text), s);
+      }
+    }
+  }
+
+  applyAnnounceRuntimeConfig(an);
 
   if (!saveAnnounceConfig(an)) {
     Serial.println(F("Web: ERROR simpan announce.json gagal"));
@@ -367,7 +429,7 @@ static inline void clockWebHandleUploadTakwim(WebServer &srv) {
 
   // ── Reload data takwim baru ──
   readTakwimZoneName();
-  DateTime now = rtc.now();
+  DateTime now = clockNowDateTime();
   loadTakwimForDate(now.day(), now.month(), now.year());
   syncPrayersFromTakwim();
 

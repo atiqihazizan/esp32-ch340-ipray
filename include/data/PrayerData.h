@@ -9,21 +9,25 @@
 // Array ini di-update oleh syncPrayersFromTakwim()
 // ================================================================
 
+// Panjang teks TTS selari dengan CONFIG_ANNOUNCE_TEXT_LEN dalam ConfigModule
+#define PRAYER_ANNOUNCE_LEN 128
+
 struct PrayerSlot {
   const char *name;
-  const char *announce;
+  char announce[PRAYER_ANNOUNCE_LEN];
   int hour;
   int minute;
   int warnBefore;
+  int warnAfterSec; // peringatan selepas waktu masuk (saat, 0 = mati)
 };
 
 static PrayerSlot prayers[] = {
-  {"Subuh",  "It is now Subooh prayer time",    0, 0, 30},
-  {"Syuruk", "It is now Shooroock time",         0, 0,  0},
-  {"Zohor",  "It is now Zohor prayer time",     0, 0, 30},
-  {"Asar",   "It is now Asarr prayer time",     0, 0, 30},
-  {"Mgrb",   "It is now Mughrib prayer time",   0, 0, 30},
-  {"Isyak",  "It is now Ishaa prayer time",     0, 0, 30},
+    {"Subuh",  {0}, 0, 0, 30,  300},
+    {"Syuruk", {0}, 0, 0,  0,    0},
+    {"Zohor",  {0}, 0, 0, 30,  300},
+    {"Asar",   {0}, 0, 0, 30,  300},
+    {"Mgrb",   {0}, 0, 0, 30,  300},
+    {"Isyak",  {0}, 0, 0, 30,  300},
 };
 static const int PRAYER_COUNT = sizeof(prayers) / sizeof(PrayerSlot);
 

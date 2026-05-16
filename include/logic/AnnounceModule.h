@@ -3,33 +3,27 @@
 
 #include "Audio.h"
 #include "core/AudioModule.h" // enqueueSpeech(), stopAndFlushAudio()
-#include "BeepModule.h"       // beepPrayer(), beepDouble(), beepWarning()
+#include "logic/BeepModule.h" // beepPrayer(), beepDouble(), beepWarning()
+#include "data/ConfigModule.h"
 #include "data/PrayerData.h"
 #include "RTClib.h"
+#include <cstring>
 #include <WiFi.h>
 
 extern Audio audio;
 
 // ================================================================
-// STRUCT: Entri jadual khas
+// STRUCT: Entri jadual khas (runtime — diisi dari announce.json)
 // ================================================================
 struct AnnounceEntry {
   int hour;
   int minute;
-  const char *text;
-  int  warnBefore;        // saat sebelum waktu masuk (0 = tiada amaran)
+  char text[CONFIG_ANNOUNCE_TEXT_LEN];
+  int warnBefore; // saat sebelum waktu masuk (0 = tiada amaran)
 };
 
-// ================================================================
-// JADUAL KHAS
-// ================================================================
-static AnnounceEntry customSchedule[] = {
-    {6,  30, "Masa sarapan pagi",                                 0 },
-    {12, 30, "Masa makan tengah hari",                            0 },
-    {14, 21, "Sudah lewat petang, tidak ada masa untuk sholat",  15 },
-    {22,  0, "Sudah lewat malam",                                 0 },
-};
-static const int CUSTOM_COUNT = sizeof(customSchedule) / sizeof(AnnounceEntry);
+static AnnounceEntry customScheduleRt[CONFIG_CUSTOM_SLOT_MAX];
+static int customScheduleRtCount = 0;
 
 // ================================================================
 // TOGGLE
@@ -39,12 +33,49 @@ bool announceCustom       = false;
 bool announceEveryMinute  = false;
 bool announceEveryQuarter = true;
 
-inline void applyAnnounceRuntimeConfig(bool prayer, bool custom, bool everyMinute,
-                                       bool everyQuarter) {
-  announcePrayer = prayer;
-  announceCustom = custom;
-  announceEveryMinute = everyMinute;
-  announceEveryQuarter = everyQuarter;
+// Tempoh (minit) paparan kekal pada waktu semasa sebelum tunjuk solat seterusnya.
+// Digunakan oleh DisplayModule.h — kemaskini melalui applyAnnounceRuntimeConfig.
+int announceNextPrayerPeriodMin = 5;
+
+inline void applyAnnounceRuntimeConfig(const ConfigAnnounce &cfg) {
+  announcePrayer = cfg.prayer;
+  announceCustom = cfg.custom;
+  announceEveryMinute = cfg.everyMinute;
+  announceEveryQuarter = cfg.everyQuarter;
+  announceNextPrayerPeriodMin = (cfg.nextPrayerPeriodMin > 0) ? cfg.nextPrayerPeriodMin : 0;
+
+  for (int i = 0; i < PRAYER_COUNT && i < CONFIG_PRAYER_SLOT_COUNT; i++) {
+    strncpy(prayers[i].announce, cfg.prayerSlots[i].announce,
+            PRAYER_ANNOUNCE_LEN - 1);
+    prayers[i].announce[PRAYER_ANNOUNCE_LEN - 1] = '\0';
+    int wb = cfg.prayerSlots[i].warnBefore;
+    if (wb < 0) wb = 0;
+    if (wb > 3600) wb = 3600;
+    prayers[i].warnBefore = wb;
+    int wa = cfg.prayerSlots[i].warnAfterSec;
+    if (wa < 0) wa = 0;
+    if (wa > 3600) wa = 3600;
+    prayers[i].warnAfterSec = wa;
+  }
+
+  customScheduleRtCount = 0;
+  int n = cfg.customSlotCount;
+  if (n > CONFIG_CUSTOM_SLOT_MAX)
+    n = CONFIG_CUSTOM_SLOT_MAX;
+  for (int i = 0; i < n; i++) {
+    customScheduleRt[i].hour = cfg.customSlots[i].hour;
+    customScheduleRt[i].minute = cfg.customSlots[i].minute;
+    int wb = cfg.customSlots[i].warnBefore;
+    if (wb < 0)
+      wb = 0;
+    if (wb > 3600)
+      wb = 3600;
+    customScheduleRt[i].warnBefore = wb;
+    strncpy(customScheduleRt[i].text, cfg.customSlots[i].text,
+            sizeof(customScheduleRt[i].text) - 1);
+    customScheduleRt[i].text[sizeof(customScheduleRt[i].text) - 1] = '\0';
+    customScheduleRtCount++;
+  }
 }
 
 // Sesua masa cetusan bagi pampasan kelewatan muat/Google TTS: jadual solat, jadual khas, dan pengumuman
@@ -160,17 +191,17 @@ bool processSchedule(AnnounceEntry *schedule, int count,
     int entryKey  = tH * 100 + tM;
     int targetSec = tH * 3600 + tM * 60;
 
-    if (wBefore > 0 && lastWarnKey != entryKey) {
-      int warnSec = targetSec - wBefore;
-      if (led >= warnSec && led <= warnSec + 2) {
-        char buf[100];
-        buildWarningText(buf, sizeof(buf), schedule[i].text, tH, tM, wBefore);
-        beepWarning();        // ← 3 bip pantas dulu
-        enqueueSpeech(buf);
-        lastWarnKey = entryKey;
-        return true;
-      }
-    }
+    // if (wBefore > 0 && lastWarnKey != entryKey) {
+    //   int warnSec = targetSec - wBefore;
+    //   if (led >= warnSec && led <= warnSec + 2) {
+    //     char buf[100];
+    //     buildWarningText(buf, sizeof(buf), schedule[i].text, tH, tM, wBefore);
+    //     beepWarning();        // ← 3 bip pantas dulu
+    //     enqueueSpeech(buf);
+    //     lastWarnKey = entryKey;
+    //     return true;
+    //   }
+    // }
 
     if (advH == tH && advM == tM && lastKey != entryKey) {
       stopAndFlushAudio();                   // ← henti audio semasa
@@ -219,6 +250,7 @@ static int lastKeyCustom  = -1;
 static int lastKeyPerMin  = -1;
 static int lastWarnPrayer = -1;
 static int lastWarnCustom = -1;
+static int lastWarnAfterPrayer = -1; // peringatan selepas waktu masuk
 
 void runAnnounceModule(DateTime now) {
   int h      = now.hour();
@@ -231,9 +263,9 @@ void runAnnounceModule(DateTime now) {
   if (announcePrayer)
     played = processPrayerSchedule(h, m, totSec, lastKeyPrayer, lastWarnPrayer);
 
-  if (!played && announceCustom)
-    played = processSchedule(customSchedule, CUSTOM_COUNT, h, m, totSec,
-                             lastKeyCustom, lastWarnCustom);
+  if (!played && announceCustom && customScheduleRtCount > 0)
+    played = processSchedule(customScheduleRt, customScheduleRtCount, h, m,
+                             totSec, lastKeyCustom, lastWarnCustom);
 
   int vt = ledSecondsToday(totSec);
   const int advSlot = vt / 60;
@@ -243,11 +275,30 @@ void runAnnounceModule(DateTime now) {
   if (!played && advSlot != lastKeyPerMin) {
     if ((announceEveryQuarter && (advM % 15 == 0)) || announceEveryMinute) {
       char buf[64];
-      // buildQuarterText(buf, sizeof(buf), advH, advM);
       buildTimeText(buf, sizeof(buf), advH, advM);
       enqueueSpeech(buf);
       lastKeyPerMin = advSlot;
       played = true;
+    }
+  }
+
+  // Peringatan selepas waktu masuk (warnAfter) — berlaku X saat selepas masuk waktu
+  if (announcePrayer && !played) {
+    for (int i = 0; i < PRAYER_COUNT; i++) {
+      int wAfter = prayers[i].warnAfterSec;
+      if (wAfter <= 0) continue;
+      int tH = prayers[i].hour;
+      int tM = prayers[i].minute;
+      int entryKey = tH * 100 + tM;
+      int warnTarget = tH * 3600 + tM * 60 + wAfter;
+      // Tetingkap 60s — pasti dicetuskan dalam 1 kitaran minit
+      if (totSec >= warnTarget && totSec < warnTarget + 60 &&
+          lastWarnAfterPrayer != entryKey) {
+        beepDouble();
+        enqueueSpeech(prayers[i].announce);
+        lastWarnAfterPrayer = entryKey;
+        break;
+      }
     }
   }
 }

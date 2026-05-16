@@ -6,6 +6,8 @@
 #include <RTClib.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include "soc/rtc_cntl_reg.h"
+#include "soc/soc.h"
 
 // ================================================================
 // DEFINISI GLOBAL
@@ -73,6 +75,10 @@ static void announceBootDateTimeRtc() {
 // SETUP
 // ================================================================
 void setup() {
+  // Lumpuhkan brownout detector via register — lebih dipercayai daripada sdkconfig
+  // (Arduino framework pre-compiled; sdkconfig.defaults mungkin tidak berkesan)
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
   Serial.begin(115200);
   delay(200);
   Serial.println(F("\n=== BOOT ==="));

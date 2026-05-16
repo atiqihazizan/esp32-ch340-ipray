@@ -15,11 +15,13 @@
 #define I2S_BCLK  27
 #define I2S_DIN   25
 
-// OLED (I2C Default ESP32)
+// OLED (I2C)
 #define SCREEN_WIDTH   128
 #define SCREEN_HEIGHT   64
 #define OLED_RESET      -1
 #define SCREEN_ADDRESS  0x3C
+#define OLED_SDA        21
+#define OLED_SCL        22
 
 // NTP & TTS
 #define GMT_OFFSET (8 * 3600)

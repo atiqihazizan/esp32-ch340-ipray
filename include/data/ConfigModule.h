@@ -49,11 +49,33 @@ struct ConfigAudio {
   char ttsLang[12];
 };
 
+// Selari susunan prayers[] dalam PrayerData.h (Subuh … Isyak)
+#define CONFIG_PRAYER_SLOT_COUNT 6
+#define CONFIG_ANNOUNCE_TEXT_LEN 128
+#define CONFIG_CUSTOM_SLOT_MAX 16
+
+struct ConfigPrayerSlot {
+  char announce[CONFIG_ANNOUNCE_TEXT_LEN];
+  int warnBefore;
+  int warnAfterSec; // peringatan selepas waktu masuk (saat, 0 = mati, lalai 300)
+};
+
+struct ConfigCustomSlot {
+  int hour;
+  int minute;
+  char text[CONFIG_ANNOUNCE_TEXT_LEN];
+  int warnBefore;
+};
+
 struct ConfigAnnounce {
   bool prayer;
   bool custom;
   bool everyMinute;
   bool everyQuarter;
+  int nextPrayerPeriodMin; // tempoh (minit) paparan kekal pada waktu semasa sebelum tunjuk solat seterusnya (lalai 5)
+  ConfigPrayerSlot prayerSlots[CONFIG_PRAYER_SLOT_COUNT];
+  ConfigCustomSlot customSlots[CONFIG_CUSTOM_SLOT_MAX];
+  int customSlotCount;
 };
 
 // ================================================================
@@ -220,12 +242,54 @@ inline ConfigAudio defaultAudioConfig() {
   return a;
 }
 
+static inline void configAnnouncePrayerDefaults(ConfigPrayerSlot *slots) {
+  const char *a[] = {
+      "It is now Soobooh prayer time",
+      "It is now Shooroock time",
+      "It is now Zohor prayer time",
+      "It is now Asarr prayer time",
+      "It is now Mughrib prayer time",
+      "It is now Ishaa prayer time",
+  };
+  const int w[] = {3000, 0, 180, 180, 300, 60};
+  const int wa[] = {300, 0, 300, 300, 300, 300}; // warnAfterSec: 5 min lalai, Syuruk 0
+  for (int i = 0; i < CONFIG_PRAYER_SLOT_COUNT; i++) {
+    configSafeCopy(slots[i].announce, sizeof(slots[i].announce), a[i]);
+    slots[i].warnBefore = w[i];
+    slots[i].warnAfterSec = wa[i];
+  }
+}
+
+static inline void configAnnounceCustomDefaults(ConfigAnnounce &x) {
+  struct Row {
+    int h, m, wb;
+    const char *t;
+  };
+  static const Row rows[] = {
+      {6, 30, 0, "Masa sarapan pagi"},
+      {12, 30, 0, "Masa makan tengah hari"},
+      {14, 21, 15, "Sudah lewat petang, tidak ada masa untuk sholat"},
+      {22, 0, 0, "Sudah lewat malam"},
+  };
+  x.customSlotCount = (int)(sizeof(rows) / sizeof(rows[0]));
+  for (int i = 0; i < x.customSlotCount && i < CONFIG_CUSTOM_SLOT_MAX; i++) {
+    x.customSlots[i].hour = rows[i].h;
+    x.customSlots[i].minute = rows[i].m;
+    x.customSlots[i].warnBefore = rows[i].wb;
+    configSafeCopy(x.customSlots[i].text, sizeof(x.customSlots[i].text),
+                   rows[i].t);
+  }
+}
+
 inline ConfigAnnounce defaultAnnounceConfig() {
-  ConfigAnnounce x;
+  ConfigAnnounce x = {};
   x.prayer = true;
   x.custom = false;
   x.everyMinute = false;
   x.everyQuarter = true;
+  x.nextPrayerPeriodMin = 5;
+  configAnnouncePrayerDefaults(x.prayerSlots);
+  configAnnounceCustomDefaults(x);
   return x;
 }
 
@@ -365,6 +429,49 @@ inline ConfigAnnounce getAnnounceConfig() {
     x.everyMinute = doc["every_minute"].as<bool>();
   if (!doc["every_quarter"].isNull())
     x.everyQuarter = doc["every_quarter"].as<bool>();
+  if (!doc["next_prayer_period_min"].isNull())
+    x.nextPrayerPeriodMin = doc["next_prayer_period_min"].as<int>();
+
+  JsonArray ps = doc["prayer_slots"].as<JsonArray>();
+  if (!ps.isNull()) {
+    for (size_t i = 0; i < CONFIG_PRAYER_SLOT_COUNT && i < ps.size(); i++) {
+      JsonObject o = ps[i];
+      if (!o["announce"].isNull()) {
+        const char *s = o["announce"];
+        if (s)
+          configSafeCopy(x.prayerSlots[i].announce,
+                         sizeof(x.prayerSlots[i].announce), s);
+      }
+      if (!o["warn_before"].isNull())
+        x.prayerSlots[i].warnBefore = o["warn_before"].as<int>();
+      if (!o["warn_after"].isNull())
+        x.prayerSlots[i].warnAfterSec = o["warn_after"].as<int>();
+    }
+  }
+
+  JsonArray cs = doc["custom_slots"].as<JsonArray>();
+  if (!cs.isNull()) {
+    int n = (int)cs.size();
+    if (n > CONFIG_CUSTOM_SLOT_MAX)
+      n = CONFIG_CUSTOM_SLOT_MAX;
+    x.customSlotCount = n;
+    for (int i = 0; i < n; i++) {
+      JsonObject o = cs[i];
+      if (!o["hour"].isNull())
+        x.customSlots[i].hour = o["hour"].as<int>();
+      if (!o["minute"].isNull())
+        x.customSlots[i].minute = o["minute"].as<int>();
+      if (!o["warn_before"].isNull())
+        x.customSlots[i].warnBefore = o["warn_before"].as<int>();
+      if (!o["text"].isNull()) {
+        const char *s = o["text"];
+        if (s)
+          configSafeCopy(x.customSlots[i].text,
+                         sizeof(x.customSlots[i].text), s);
+      }
+    }
+  }
+
   return x;
 }
 
@@ -374,6 +481,25 @@ inline bool saveAnnounceConfig(const ConfigAnnounce &cfg) {
   doc["custom"] = cfg.custom;
   doc["every_minute"] = cfg.everyMinute;
   doc["every_quarter"] = cfg.everyQuarter;
+  doc["next_prayer_period_min"] = cfg.nextPrayerPeriodMin;
+
+  JsonArray ps = doc["prayer_slots"].to<JsonArray>();
+  for (int i = 0; i < CONFIG_PRAYER_SLOT_COUNT; i++) {
+    JsonObject o = ps.add<JsonObject>();
+    o["announce"] = cfg.prayerSlots[i].announce;
+    o["warn_before"] = cfg.prayerSlots[i].warnBefore;
+    o["warn_after"] = cfg.prayerSlots[i].warnAfterSec;
+  }
+
+  JsonArray cs = doc["custom_slots"].to<JsonArray>();
+  for (int i = 0; i < cfg.customSlotCount && i < CONFIG_CUSTOM_SLOT_MAX;
+       i++) {
+    JsonObject o = cs.add<JsonObject>();
+    o["hour"] = cfg.customSlots[i].hour;
+    o["minute"] = cfg.customSlots[i].minute;
+    o["warn_before"] = cfg.customSlots[i].warnBefore;
+    o["text"] = cfg.customSlots[i].text;
+  }
 
   return configWriteJsonFile("announce", CONFIG_PATH_ANNOUNCE, doc);
 }

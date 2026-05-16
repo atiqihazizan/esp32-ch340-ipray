@@ -1,0 +1,58 @@
+{
+  "prayer": true,
+  "custom": false,
+  "every_minute": false,
+  "every_quarter": true,
+  "prayer_slots": [
+    {
+      "announce": "It is now Soobooh prayer time",
+      "warn_before": 30
+    },
+    {
+      "announce": "It is now Shooroock time",
+      "warn_before": 0
+    },
+    {
+      "announce": "It is now Zohor prayer time",
+      "warn_before": 30
+    },
+    {
+      "announce": "It is now Asarr prayer time",
+      "warn_before": 30
+    },
+    {
+      "announce": "It is now Mughrib prayer time",
+      "warn_before": 30
+    },
+    {
+      "announce": "It is now Ishaa prayer time",
+      "warn_before": 30
+    }
+  ],
+  "custom_slots": [
+    {
+      "hour": 6,
+      "minute": 30,
+      "warn_before": 0,
+      "text": "Masa sarapan pagi"
+    },
+    {
+      "hour": 12,
+      "minute": 30,
+      "warn_before": 0,
+      "text": "Masa makan tengah hari"
+    },
+    {
+      "hour": 14,
+      "minute": 21,
+      "warn_before": 15,
+      "text": "Sudah lewat petang, tidak ada masa untuk sholat"
+    },
+    {
+      "hour": 22,
+      "minute": 0,
+      "warn_before": 0,
+      "text": "Sudah lewat malam"
+    }
+  ]
+}

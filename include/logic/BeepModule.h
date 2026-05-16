@@ -2,6 +2,7 @@
 #define BEEP_MODULE_H
 
 #include "core/AudioModule.h"
+#include "esp_task_wdt.h"
 #include <SPIFFS.h>
 #include <math.h>
 
@@ -32,7 +33,8 @@
 // ================================================================
 // HELPER: Tulis WAV header (44 bytes)
 // ================================================================
-static void _wavHdr(File &f, uint32_t dataBytes) {
+template <typename W>
+static void _wavHdr(W &f, uint32_t dataBytes) {
   uint16_t ch = 1, bps = 16, fmt = 1, ba = 2;
   uint32_t sr = BEEP_SR, br = BEEP_SR * 2, s1 = 16;
   uint32_t riff = 36 + dataBytes;
@@ -56,15 +58,18 @@ static void _wavHdr(File &f, uint32_t dataBytes) {
 // HELPER: Tulis sampel sine wave dengan envelope ringkas
 // (elak click/pop di permulaan & penghujung beep)
 // ================================================================
-static void _sine(File &f, int ms) {
+template <typename W>
+static void _sine(W &f, int ms) {
   int n = BEEP_SR * ms / 1000;
   int fade = BEEP_SR * 5 / 1000; // 5ms fade in/out
   if (fade > n / 2)
     fade = n / 2;
 
   for (int i = 0; i < n; i++) {
-    if ((i & 0x3FF) == 0)
-      yield(); // elak boot “freeze” — jana WAV boleh ambil beberapa saat
+    if ((i & 0x3FF) == 0) {
+      esp_task_wdt_reset();
+      yield();
+    }
     float env = 1.0f;
     if (i < fade)
       env = (float)i / fade;
@@ -80,33 +85,29 @@ static void _sine(File &f, int ms) {
 // ================================================================
 // HELPER: Tulis senyap (silence)
 // ================================================================
-static void _sil(File &f, int ms) {
+template <typename W>
+static void _sil(W &f, int ms) {
   int n = BEEP_SR * ms / 1000;
   int16_t z = 0;
   for (int i = 0; i < n; i++) {
-    if ((i & 0x3FF) == 0)
+    if ((i & 0x3FF) == 0) {
+      esp_task_wdt_reset();
       yield();
+    }
     f.write((uint8_t *)&z, 2);
   }
 }
 
 // ================================================================
-// HELPER: Check & handle fail sedia ada
-// Return true jika perlu skip jana (fail wujud & tak force regen)
-// Return false jika boleh teruskan jana
+// Skip jana jika SPIFFS sudah ada fail
 // ================================================================
 static bool _checkSkip(const char *path) {
-  if (!SPIFFS.exists(path))
-    return false; // fail tak wujud — teruskan jana
-
-  if (!BEEP_FORCE_REGEN) {
-    // Serial.printf("Beep: %s sudah ada — jana dilangkau\n", path);
-    return true; // skip jana
+  if (BEEP_FORCE_REGEN) {
+    if (SPIFFS.exists(path))
+      SPIFFS.remove(path);
+    return false;
   }
-
-  // Serial.printf("Beep: %s sudah ada — padam & jana semula\n", path);
-  SPIFFS.remove(path);
-  return false; // dah padam — teruskan jana
+  return SPIFFS.exists(path);
 }
 
 // ================================================================
@@ -145,8 +146,6 @@ static void _makeWav(const char *path, int *bMs, int *sMs, int count) {
 
 // ================================================================
 // JANA WAV — pattern set berulang
-// Setiap set = beep + shortMs + beep, dipisahkan dengan longMs
-// (tiada longMs selepas set terakhir)
 // ================================================================
 static void _makeWavSet(const char *path, int beepMs, int shortMs,
                         int longMs, int sets) {
@@ -178,8 +177,7 @@ static void _makeWavSet(const char *path, int beepMs, int shortMs,
 }
 
 // ================================================================
-// HELPER: Padam fail lama yang tidak lagi digunakan
-// Panggil dalam initBeeps() untuk cleanup fail-fail obsolete
+// HELPER: Padam fail lama yang tidak lagi digunakan (SPIFFS sahaja)
 // ================================================================
 static void _removeOldWav(const char *path) {
   if (SPIFFS.exists(path)) {
@@ -191,32 +189,21 @@ static void _removeOldWav(const char *path) {
 // ================================================================
 // FUNGSI BEEP
 // ================================================================
-// void beepSingle() { enqueueSpeech("/b1.wav"); }
 void beepDouble() { enqueueSpeech("/b2.wav"); }
 void beepPrayer() { enqueueSpeech("/ba.wav"); }
-void beepWarning() { enqueueSpeech("/b2.wav"); }
+void beepWarning() { enqueueSpeech("/b3.wav"); }
 
 // ================================================================
-// INIT — jana fail WAV ke SPIFFS (langkau jika fail sudah ada)
-// + ujian bunyi boot
+// INIT — WAV dalam SPIFFS sahaja
 // ================================================================
 void initBeeps() {
-  if (!SPIFFS.begin(true)) {
-    Serial.println(F("Beep: SPIFFS gagal!"));
-    return;
-  }
-
-  // ── CLEANUP: padam fail lama yang tidak lagi digunakan ──
-  // Tambah path di sini bila ada fail beep lama nak buang
+  // SPIFFS sudah dimulakan oleh initConfigStorage() dengan maxOpenFiles=24
+  // — jangan panggil SPIFFS.begin() semula (akan set semula ke maxOpenFiles=5)
   _removeOldWav("/beep.wav");
   _removeOldWav("/beep1.wav");
   _removeOldWav("/beep2.wav");
-  _removeOldWav("/b3.wav");
-  _removeOldWav("/b2.wav");
-  // _removeOldWav("/b5.wav");  // contoh: kalau dulu ada b5
+  // _removeOldWav("/b3.wav");
 
-  // Versi dahulu janakan /ba.wav terlalu panjang (> SPIFFS partition) —
-  // buang satu kali untuk jana ulang pola baharu yang muat dalam flash.
   {
     File ch = SPIFFS.open("/ba.wav", "r");
     if (ch && ch.size() > 620000L) {
@@ -227,37 +214,18 @@ void initBeeps() {
       ch.close();
   }
 
-  // ── JANA fail WAV semasa ──
-  // b1: 1 beep tunggal
   {
     int b[] = {70};
     int s[] = {0};
     _makeWav("/b1.wav", b, s, 1);
   }
 
-  // b2: 1 set (2 beep rapat)
   _makeWavSet("/b2.wav", 70, 50, 0, 1);
+  _makeWavSet("/ba.wav", 60, 50, 1700, 10);
+  _makeWavSet("/b3.wav", 60, 50, 1700, 3);
 
-  // ba: azan / prayer — dahulu 20 set ≈ >1 MB WAV (tidak muat dalam SPIFFS
-  // partition ~896 KiB); boot tersekat masa jana tulisan flash beratus ribu bait.
-  // 8 set ≈ siri bunyi panjang lagi ~0.4 MB WAV + ruang untuk bw / web / config.
-  _makeWavSet("/ba.wav", 70, 50, 1700, 8);
-
-  // bw: amaran — 5 set
-  // _makeWavSet("/bw.wav", 70, 50, 1700, 5);
-
-  // // bw: warning — 3 beep dengan jeda
-  // {
-  //   int b[] = {200, 200, 200};
-  //   int s[] = {80, 250, 0};
-  //   _makeWav("/bw.wav", b, s, 3);
-  // }
-
-  // Ujian boot — queue main satu per satu (isRunning check dalam AudioLoopTask)
   Serial.println(F("Boot beep..."));
   beepDouble();
-  // beepPrayer();
-  // beepWarning();
 }
 
 #endif

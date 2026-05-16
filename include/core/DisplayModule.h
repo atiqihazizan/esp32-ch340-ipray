@@ -8,6 +8,7 @@
 #include "logic/BeepModule.h"
 #include <Adafruit_SSD1306.h>
 #include <WiFi.h>
+#include <Wire.h>
 
 extern Adafruit_SSD1306 display;
 extern String audioStatus;
@@ -28,12 +29,18 @@ struct HijriDate {
   int day, month, year;
 };
 
+// Digunakan oleh DisplayModule — definisi dalam AnnounceModule.h
+extern int announceNextPrayerPeriodMin;
+
 // ─── WAKTU SOLAT ─────────────────────────────────────────
+// Pulangkan solat "seterusnya". Jika waktu baru masuk dalam tempoh period,
+// waktu itu masih dianggap semasa (diff boleh negatif — diselesaikan di Panel A).
 const char *getNextPrayer(int h, int m, int &outH, int &outM) {
   int nowMin = h * 60 + m;
+  int period = announceNextPrayerPeriodMin;
   for (int i = 0; i < PRAYER_COUNT; i++) {
     int pt = prayers[i].hour * 60 + prayers[i].minute;
-    if (pt > nowMin) {
+    if (pt + period > nowMin) {
       outH = prayers[i].hour;
       outM = prayers[i].minute;
       return prayers[i].name;
@@ -70,8 +77,19 @@ const char *hijriMonthShort(int m) {
 
 // ─── INIT ────────────────────────────────────────────────
 void initDisplay() {
-  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 failed"));
+  Wire.begin(OLED_SDA, OLED_SCL);
+  Wire.setClock(100000); // 100 kHz — lebih stabil jika bas I2C bising / tarik atas lemah
+  delay(20);
+
+  bool ok = false;
+  for (int attempt = 0; attempt < 3 && !ok; attempt++) {
+    if (attempt > 0)
+      delay(80);
+    ok = display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
+  }
+
+  if (!ok) {
+    Serial.println(F("SSD1306 gagal — semak SDA/SCL, VCC, GND"));
   }
   display.clearDisplay();
   display.display();
@@ -299,16 +317,21 @@ void runOledHomePrayer(DateTime now) {
   display.setTextColor(SSD1306_WHITE);
 
   if (homePanelIdx == 0) {
-    // PANEL A: Next Prayer
+    // PANEL A: Next Prayer / Waktu Semasa (dalam tempoh grace)
     int nextH, nextM;
     const char *pName = getNextPrayer(now.hour(), now.minute(), nextH, nextM);
     int diff = nextH * 60 + nextM - now.hour() * 60 - now.minute();
-    if (diff < 0)
-      diff += 1440;
+    // diff negatif = waktu baru masuk (dalam tempoh grace announceNextPrayerPeriodMin)
+    bool justEntered = (diff <= 0 && diff >= -announceNextPrayerPeriodMin);
     display.setCursor(0, 38);
-    display.printf("Solat : %-6s %02d:%02d", pName, nextH, nextM);
+    display.printf("Waktu : %-6s %02d:%02d", pName, nextH, nextM);
     display.setCursor(0, 50);
-    display.printf("Masa  : %dj %02dm lagi", diff / 60, diff % 60);
+    if (justEntered) {
+      display.printf("Masuk : %d min lalu", -diff);
+    } else {
+      if (diff < 0) diff += 1440;
+      display.printf("Masa  : %dj %02dm lagi", diff / 60, diff % 60);
+    }
 
   } else if (homePanelIdx == 1) {
     // PANEL B: Semua waktu solat

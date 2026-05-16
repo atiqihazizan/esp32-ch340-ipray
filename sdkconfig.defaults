@@ -1,0 +1,8 @@
+# Elak ralat boot: esp_core_dump_flash checksum — partition core dump kosong/0xFF
+# (bukan panic aplikasi; hanya pemeriksaan ESP-IDF pada storan dump)
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=n
+
+# Brownout selepas WiFi/USB lemah — rawatan firmware (bukan ganti PSU bagus).
+# Bekalan USB/5V→3V3 mestilah mencukupi untuk WiFi+I2S+I2C serentak.
+# Jika voltan tidak stabil dalam nyata: buang baris ini (biar BOD ON) & baiki kuasa.
+CONFIG_ESP32_BROWNOUT_DET=n
