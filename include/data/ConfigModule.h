@@ -67,6 +67,8 @@ struct ConfigAnnounce {
   bool everyMinute;
   bool everyQuarter;
   int nextPrayerPeriodMin; // tempoh (minit) paparan kekal pada waktu semasa sebelum tunjuk solat seterusnya (lalai 5)
+  bool quarterHourBeep;    // beepDouble pada :15 :30 :45 (perlu SD untuk cache solat; beep sendiri di SPIFFS)
+  bool hourlyBell;         // loceng WAV pada :00 (fail /ann/sys/bell_hour.wav pada SD)
   ConfigPrayerSlot prayerSlots[CONFIG_PRAYER_SLOT_COUNT];
   ConfigCustomSlot customSlots[CONFIG_CUSTOM_SLOT_MAX];
   int customSlotCount;
@@ -284,6 +286,8 @@ inline ConfigAnnounce defaultAnnounceConfig() {
   x.everyMinute = false;
   x.everyQuarter = true;
   x.nextPrayerPeriodMin = 5;
+  x.quarterHourBeep = false;
+  x.hourlyBell      = true;
   configAnnouncePrayerDefaults(x.prayerSlots);
   configAnnounceCustomDefaults(x);
   return x;
@@ -406,6 +410,10 @@ inline ConfigAnnounce getAnnounceConfig() {
     x.everyQuarter = doc["every_quarter"].as<bool>();
   if (!doc["next_prayer_period_min"].isNull())
     x.nextPrayerPeriodMin = doc["next_prayer_period_min"].as<int>();
+  if (!doc["quarter_hour_beep"].isNull())
+    x.quarterHourBeep = doc["quarter_hour_beep"].as<bool>();
+  if (!doc["hourly_bell"].isNull())
+    x.hourlyBell = doc["hourly_bell"].as<bool>();
 
   JsonArray ps = doc["prayer_slots"].as<JsonArray>();
   if (!ps.isNull()) {
@@ -457,6 +465,8 @@ inline bool saveAnnounceConfig(const ConfigAnnounce &cfg) {
   doc["every_minute"] = cfg.everyMinute;
   doc["every_quarter"] = cfg.everyQuarter;
   doc["next_prayer_period_min"] = cfg.nextPrayerPeriodMin;
+  doc["quarter_hour_beep"] = cfg.quarterHourBeep;
+  doc["hourly_bell"]      = cfg.hourlyBell;
 
   JsonArray ps = doc["prayer_slots"].to<JsonArray>();
   for (int i = 0; i < CONFIG_PRAYER_SLOT_COUNT; i++) {

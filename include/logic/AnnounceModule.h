@@ -32,6 +32,9 @@ bool announcePrayer       = true;
 bool announceCustom       = false;
 bool announceEveryMinute  = false;
 bool announceEveryQuarter = true;
+// Toggle tambahan — simpan dalam announce.json
+bool announceQuarterHourBeep = false; // beepDouble :15 :30 :45
+bool announceHourlyBell      = true;  // dong :00 pada SD
 
 // Tempoh (minit) paparan kekal pada waktu semasa sebelum tunjuk solat seterusnya.
 // Digunakan oleh DisplayModule.h — kemaskini melalui applyAnnounceRuntimeConfig.
@@ -43,6 +46,8 @@ inline void applyAnnounceRuntimeConfig(const ConfigAnnounce &cfg) {
   announceEveryMinute = cfg.everyMinute;
   announceEveryQuarter = cfg.everyQuarter;
   announceNextPrayerPeriodMin = (cfg.nextPrayerPeriodMin > 0) ? cfg.nextPrayerPeriodMin : 0;
+  announceQuarterHourBeep = cfg.quarterHourBeep;
+  announceHourlyBell      = cfg.hourlyBell;
 
   for (int i = 0; i < PRAYER_COUNT && i < CONFIG_PRAYER_SLOT_COUNT; i++) {
     strncpy(prayers[i].announce, cfg.prayerSlots[i].announce,
@@ -222,7 +227,9 @@ bool processPrayerSchedule(int h, int m, int totalSec,
                  "%s prayer time has passed, %s since prayer time.",
                  prayers[iw].name, dur);
         beepDouble();
-        enqueueSpeech(line);
+        char aid[32];
+        snprintf(aid, sizeof(aid), "p%d_after_%d", iw, wa);
+        enqueueCachedOrSpeech(aid, line);
         prayerWarnAfterPending = false;
         prayerWarnAfterSlot    = -1;
         return true;
@@ -246,8 +253,9 @@ bool processPrayerSchedule(int h, int m, int totalSec,
       if (led >= warnSec && led <= warnSec + 2) {
         char buf[100];
         buildWarningText(buf, sizeof(buf), prayers[i].announce, tH, tM, wBefore);
-        beepWarning();        // ← 3 bip pantas dulu
-        enqueueSpeech(buf);   // ← TTS warning (perlu WiFi)
+        char warnId[24];
+        snprintf(warnId, sizeof(warnId), "p%d_warn", i);
+        enqueueCachedOrSpeech(warnId, buf);
         lastWarnKey = entryKey;
         return true;
       }
@@ -256,7 +264,9 @@ bool processPrayerSchedule(int h, int m, int totalSec,
     if (advH == tH && advM == tM && lastKey != entryKey) {
       stopAndFlushAudio();                   // ← henti warning TTS / audio semasa
       beepPrayer();                          // ← beep waktu solat (10 bip)
-      enqueueSpeech(prayers[i].announce);    // ← TTS lepas tu
+      char adId[20];
+      snprintf(adId, sizeof(adId), "p%d_adhan", i);
+      enqueueCachedOrSpeech(adId, prayers[i].announce);
       lastKey = entryKey;
       // Aktifkan menunggu peringatan warn_after — tidak bergantung pada played / suku jam
       if (prayers[i].warnAfterSec > 0) {
@@ -301,7 +311,9 @@ bool processSchedule(AnnounceEntry *schedule, int count,
       } else {
         buildTimeText(buf, sizeof(buf), advH, advM);
       }
-      enqueueSpeech(buf);                    // ← TTS lepas tu
+      char cid[16];
+      snprintf(cid, sizeof(cid), "c%02d", i);
+      enqueueCachedOrSpeech(cid, buf);
       lastKey = entryKey;
       return true;
     }
@@ -361,9 +373,25 @@ void runAnnounceModule(DateTime now) {
 
   if (!played && advSlot != lastKeyPerMin) {
     if ((announceEveryQuarter && (advM % 15 == 0)) || announceEveryMinute) {
+      if (externalAudioReady() && announceHourlyBell && advM == 0) {
+        char bp[80];
+        ttsCacheRelPathBell(bp, sizeof(bp));
+        fs::FS *ef = externalAudioFs();
+        if (ef && ef->exists(bp)) {
+          char qq[TTS_TEXT_LEN];
+          snprintf(qq, sizeof(qq), "x:%s", bp);
+          enqueueSpeech(qq);
+        }
+      }
+      if (externalAudioReady() && announceQuarterHourBeep &&
+          (advM % 15 == 0) && advM != 0) {
+        beepDouble();
+      }
       char buf[64];
       buildTimeText(buf, sizeof(buf), advH, advM);
-      enqueueSpeech(buf);
+      char clkId[24];
+      snprintf(clkId, sizeof(clkId), "clk_%02d_%02d", advH, advM);
+      enqueueCachedOrSpeech(clkId, buf);
       lastKeyPerMin = advSlot;
       played = true;
     }

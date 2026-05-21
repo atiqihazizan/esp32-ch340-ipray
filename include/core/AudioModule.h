@@ -3,6 +3,8 @@
 
 #include "Audio.h"
 #include "config.h"
+#include "core/AudioStorageModule.h"
+#include "data/TtsCacheCore.h"
 #include <SPIFFS.h>
 #include <WiFi.h>
 
@@ -15,18 +17,42 @@ char activeTtsLang[12] = {0};
 #define RAM_BUF_SIZE (8 * 1024)
 #define PSRAM_BUF_SIZE (psramFound() ? (32 * 1024) : 0)
 
-#define TTS_QUEUE_DEPTH 4
-#define TTS_TEXT_LEN 128
+#define TTS_QUEUE_DEPTH 28
+#define TTS_TEXT_LEN    160
 
 static QueueHandle_t ttsQueue = nullptr;
 
 void enqueueSpeech(const char *text) {
-  if (!ttsQueue)
+  if (!ttsQueue || !text)
     return;
   char buf[TTS_TEXT_LEN];
   strncpy(buf, text, TTS_TEXT_LEN - 1);
   buf[TTS_TEXT_LEN - 1] = '\0';
   xQueueSend(ttsQueue, buf, 0);
+}
+
+// Cuba main MP3 cache storan luaran mengikut id + teks sumber (hash).
+// Pulangan true jika item x: diqueue; false = fallback teks diqueue.
+bool enqueueCachedOrSpeech(const char *cacheId, const char *text) {
+  if (!text)
+    return false;
+  if (!externalAudioReady()) {
+    enqueueSpeech(text);
+    return false;
+  }
+  fs::FS *xfs = externalAudioFs();
+  JsonDocument doc;
+  if (!ttsManifestLoad(doc) ||
+      !ttsCacheEntryValid(*xfs, doc, cacheId, text, activeTtsLang)) {
+    enqueueSpeech(text);
+    return false;
+  }
+  char rel[96];
+  ttsCacheRelPathMp3(cacheId, rel, sizeof(rel));
+  char q[TTS_TEXT_LEN];
+  snprintf(q, sizeof(q), "x:%s", rel);
+  enqueueSpeech(q);
+  return true;
 }
 
 // ================================================================
@@ -60,13 +86,16 @@ void AudioLoopTask(void *pvParameters) {
     if (!audio.isRunning()) {
       if (xQueueReceive(ttsQueue, ttsText, 0) == pdTRUE) {
 
-        // ── ROUTE: '/' di permulaan = fail SPIFFS ──
-        if (ttsText[0] == '/') {
-          // Serial.printf("Audio: play file %s\n", ttsText);
+        // ── x:/path = storan luaran (SD) ──
+        if (ttsText[0] == 'x' && ttsText[1] == ':') {
+          fs::FS *efs = externalAudioFs();
+          if (efs)
+            audio.connecttoFS(*efs, ttsText + 2);
+          else
+            Serial.println(F("Audio: x: tiada storan luaran"));
+        } else if (ttsText[0] == '/') {
           audio.connecttoFS(SPIFFS, ttsText);
-        }
-        // ── Selain itu = TTS (perlu WiFi) ──
-        else {
+        } else {
           if (WiFi.status() == WL_CONNECTED) {
             audio.connecttospeech(ttsText, activeTtsLang);
           } else {

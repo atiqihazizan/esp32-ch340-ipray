@@ -20,6 +20,7 @@ String audioStatus = "IDLE";
 // MODUL
 // ================================================================
 #include "logic/AnnounceModule.h"
+#include "core/AudioStorageModule.h"
 #include "core/AudioModule.h"
 #include "logic/BeepModule.h"
 #include "core/DisplayModule.h"
@@ -82,7 +83,7 @@ void setup() {
                      "sehingga SPIFFS OK"));
   }
 
-  initDisplay();
+  initAudioStorage();
   initTime();
 
   showSplashLogo(2000);
@@ -140,6 +141,22 @@ void setup() {
 // ================================================================
 void loop() {
   clockWebServerLoop();
+
+  static unsigned long s_lastRbCfgMs = 0;
+  static ConfigAnnounce s_anRb;
+  static ConfigAudio    s_audRb;
+
+  if (ttsCacheRebuildActive()) {
+    unsigned long m = millis();
+    if (s_lastRbCfgMs == 0 || m - s_lastRbCfgMs > 800) {
+      s_lastRbCfgMs = m;
+      s_anRb  = getAnnounceConfig();
+      s_audRb = getAudioConfig();
+    }
+    ttsCacheRebuildPump(s_anRb, s_audRb);
+  } else {
+    s_lastRbCfgMs = 0;
+  }
 
   if (clockWebRebootSoon) {
     delay(450);

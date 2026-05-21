@@ -126,6 +126,7 @@ code { font-size: 12px; color: #adf; }
     <div class="nav-item" data-page="takwim"><span class="icon">🕌</span>Prayer timetable</div>
     <div class="nav-item" data-page="audio"><span class="icon">🔊</span>Audio</div>
     <div class="nav-item" data-page="announce"><span class="icon">📣</span>Announcements</div>
+    <div class="nav-item" data-page="cache"><span class="icon">💾</span>TTS cache</div>
     <div class="nav-item" data-page="actions"><span class="icon">⚡</span>Actions</div>
     <div class="nav-divider"></div>
     <a href="/files" class="nav-link">📂 Files browser</a>
@@ -195,6 +196,8 @@ code { font-size: 12px; color: #adf; }
       <label><input id="annc" type="checkbox" class="chk">Custom schedule</label>
       <label><input id="annm" type="checkbox" class="chk">Every minute</label>
       <label><input id="annq" type="checkbox" class="chk">Quarter-hour</label>
+      <label><input id="annqh" type="checkbox" class="chk">Quarter beep (:15 :30 :45, beepDouble)</label>
+      <label><input id="annhb" type="checkbox" class="chk">Hourly bell (:00, WAV pada SD)</label>
 
       <p class="sub">Prayer — TTS phrase &amp; warning lead (seconds before adhan; 0 = off)</p>
       <div id="prayerSlotsMount"></div>
@@ -203,6 +206,19 @@ code { font-size: 12px; color: #adf; }
       <div id="customSlotsMount"></div>
 
       <button type="button" class="btn" onclick="saveAnn()">Save announcements</button>
+    </div>
+
+    <!-- ---------- TTS CACHE ---------- -->
+    <div class="page" id="page-cache">
+      <h2>TTS cache (microSD)</h2>
+      <p class="p">Sisipkan kad SD (FAT32). Main TTS cache sebagai fail MP3 untuk kebanyakan pengumuman; perlukan WiFi semasa &quot;Regenerate all&quot;.</p>
+      <button type="button" class="btn secondary" onclick="loadCacheStatus()">Refresh status</button>
+      <button type="button" class="btn" onclick="startCacheRegen()" id="btnCacheRegen">Regenerate all</button>
+      <pre id="cacheSt" style="margin-top:10px;"></pre>
+      <div style="margin-top:10px;background:#222;height:22px;border-radius:4px;overflow:hidden;border:1px solid #444;">
+        <div id="cacheBar" style="height:100%;width:0%;background:#264;transition:width 0.2s;"></div>
+      </div>
+      <p id="cacheLbl" class="p" style="margin-top:8px;"></p>
     </div>
 
     <!-- ---------- ACTIONS ---------- -->
@@ -220,6 +236,8 @@ code { font-size: 12px; color: #adf; }
 // ================================================================
 // PAGE NAVIGATION — BARU
 // ================================================================
+let cachePollTimer = null;
+
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -228,6 +246,15 @@ function showPage(name) {
   if (page) page.classList.add('active');
   if (nav)  nav.classList.add('active');
   try { localStorage.setItem('cfgPage', name); } catch (e) {}
+
+  if (cachePollTimer) {
+    clearInterval(cachePollTimer);
+    cachePollTimer = null;
+  }
+  if (name === 'cache') {
+    loadCacheStatus();
+    cachePollTimer = setInterval(loadCacheStatus, 2500);
+  }
 
   // Lazy-load zones bila page takwim dibuka kali pertama
   if (name === 'takwim' && !zonesLoaded) {
@@ -479,7 +506,9 @@ function buildAnnounceForms() {
       '<label>' + PRAYER_SLOT_LABELS[i] + ' — teks TTS</label>' +
       '<textarea id="ps_ann_' + i + '" rows="2" maxlength="127"></textarea>' +
       '<label>Amaran awal (saat sebelum waktu, 0 = mati)</label>' +
-      '<input id="ps_wb_' + i + '" type="number" min="0" max="3600" value="0">';
+      '<input id="ps_wb_' + i + '" type="number" min="0" max="3600" value="0">' +
+      '<label>Amaran selepas solat (saat lepas waktu masuk, 0 = mati)</label>' +
+      '<input id="ps_wa_' + i + '" type="number" min="0" max="3600" value="0">';
     pm.appendChild(d);
   }
   const cm = document.getElementById('customSlotsMount');
@@ -531,16 +560,22 @@ async function loadCfg() {
     document.getElementById('annc').checked = !!j.announce.custom;
     document.getElementById('annm').checked = !!j.announce.every_minute;
     document.getElementById('annq').checked = !!j.announce.every_quarter;
+    const elQh = document.getElementById('annqh');
+    const elHb = document.getElementById('annhb');
+    if (elQh) elQh.checked = !!j.announce.quarter_hour_beep;
+    if (elHb) elHb.checked = !!j.announce.hourly_bell;
 
     const ps = j.announce.prayer_slots;
     if (Array.isArray(ps)) {
       for (let i = 0; i < PRAYER_SLOT_LABELS.length; i++) {
         const elA = document.getElementById('ps_ann_' + i);
         const elW = document.getElementById('ps_wb_' + i);
+        const elWa81 = document.getElementById('ps_wa_' + i);
         if (!elA || !elW) continue;
         if (ps[i]) {
           elA.value = ps[i].announce != null ? String(ps[i].announce) : '';
           elW.value = ps[i].warn_before != null ? ps[i].warn_before : 0;
+          if (elWa81) elWa81.value = ps[i].warn_after != null ? ps[i].warn_after : 0;
         }
       }
     }
@@ -662,9 +697,11 @@ async function saveAud() {
 async function saveAnn() {
   const prayer_slots = [];
   for (let i = 0; i < PRAYER_SLOT_LABELS.length; i++) {
+    const elWa = document.getElementById('ps_wa_' + i);
     prayer_slots.push({
       announce: document.getElementById('ps_ann_' + i).value,
-      warn_before: parseInt(document.getElementById('ps_wb_' + i).value, 10) || 0
+      warn_before: parseInt(document.getElementById('ps_wb_' + i).value, 10) || 0,
+      warn_after: elWa ? (parseInt(elWa.value, 10) || 0) : 0
     });
   }
   const custom_slots = [];
@@ -683,6 +720,8 @@ async function saveAnn() {
     custom: document.getElementById('annc').checked,
     every_minute: document.getElementById('annm').checked,
     every_quarter: document.getElementById('annq').checked,
+    quarter_hour_beep: document.getElementById('annqh') ? document.getElementById('annqh').checked : false,
+    hourly_bell: document.getElementById('annhb') ? document.getElementById('annhb').checked : false,
     prayer_slots,
     custom_slots
   });
@@ -701,6 +740,38 @@ async function doNtp() {
 async function doRb() {
   await postJson('/api/action/reboot', {});
   showMsg('Reboot requested…');
+}
+
+async function loadCacheStatus() {
+  const pre = document.getElementById('cacheSt');
+  const bar = document.getElementById('cacheBar');
+  const lbl = document.getElementById('cacheLbl');
+  const btn = document.getElementById('btnCacheRegen');
+  try {
+    const r = await fetch('/api/cache/status');
+    const j = await r.json();
+    if (pre) pre.textContent = JSON.stringify(j, null, 2);
+    const t = (j.total > 0) ? j.total : 1;
+    const d = j.done | 0;
+    const pct = Math.min(100, Math.round((d / t) * 100));
+    if (bar) bar.style.width = pct + '%';
+    if (lbl) {
+      if (j.active) lbl.textContent = 'Menjana: ' + d + ' / ' + j.total + ' — ' + (j.last_slot || '');
+      else if (j.storage === 'sd') lbl.textContent = (d >= j.total && j.total > 0) ? 'Jana siap (atau tidak aktif).' : 'Sedia — tekan Regenerate jika perlu.';
+      else lbl.textContent = 'Tiada SD — sisipkan microSD (FAT32).';
+    }
+    if (btn) btn.disabled = !!j.active;
+    showMsg('');
+  } catch (e) {
+    if (pre) pre.textContent = String(e);
+  }
+}
+
+async function startCacheRegen() {
+  const r = await postJson('/api/action/cache_regen', {});
+  const t = await r.text();
+  showMsg('cache: HTTP ' + r.status + ' — ' + t);
+  loadCacheStatus();
 }
 
 buildAnnounceForms();

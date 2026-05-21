@@ -16,6 +16,8 @@
 #include "network/HTTPDownload.h"
 #include "network/NTPManager.h"
 #include "network/WiFiManager.h"
+#include "core/AudioStorageModule.h"
+#include "data/TtsCacheRebuild.h"
 
 // Pembolehubah global (definisi dalam main.cpp)
 extern bool clockWebRebootSoon;
@@ -83,6 +85,27 @@ static inline void clockWebHandleStatus(WebServer &srv) {
   doc["takwim_ok"] = takwimTodayValid();
   doc["takwim_zon"] = takwimZoneNameStr();
 
+  switch (audioStorageKind()) {
+  case AUDIO_STORAGE_SD_CARD:
+    doc["ext_storage"] = "sd";
+    break;
+  case AUDIO_STORAGE_W25Q128_PENDING:
+    doc["ext_storage"] = "w25q_pending";
+    break;
+  default:
+    doc["ext_storage"] = "none";
+    break;
+  }
+  doc["tts_cache_rebuild"] = ttsCacheRebuildActive();
+  if (ttsCacheRebuildActive()) {
+    int d = 0, t = 0;
+    char last[32] = {};
+    ttsCacheRebuildProgress(&d, &t, last, sizeof(last));
+    doc["tts_cache_done"] = d;
+    doc["tts_cache_total"] = t;
+    doc["tts_cache_last"] = last;
+  }
+
   DateTime t = clockNowDateTime();
   char iso[36];
   snprintf(iso, sizeof(iso), "%04d-%02d-%02dT%02d:%02d:%02d", t.year(),
@@ -113,6 +136,8 @@ static inline void clockWebHandleGetConfig(WebServer &srv) {
   doc["announce"]["every_minute"] = an.everyMinute;
   doc["announce"]["every_quarter"] = an.everyQuarter;
   doc["announce"]["next_prayer_period_min"] = an.nextPrayerPeriodMin;
+  doc["announce"]["quarter_hour_beep"] = an.quarterHourBeep;
+  doc["announce"]["hourly_bell"] = an.hourlyBell;
 
   JsonArray psOut = doc["announce"]["prayer_slots"].to<JsonArray>();
   for (int i = 0; i < CONFIG_PRAYER_SLOT_COUNT; i++) {
@@ -241,13 +266,19 @@ static inline void clockWebHandlePostAudio(WebServer &srv) {
     return;
   }
 
-  ConfigAudio a = getAudioConfig();
+  ConfigAudio aPrev = getAudioConfig();
+  ConfigAudio a = aPrev;
   if (!doc["volume"].isNull())
     a.volume = doc["volume"].as<int>();
   if (!doc["tts_lang"].isNull()) {
     const char *s = doc["tts_lang"];
     if (s)
       configSafeCopy(a.ttsLang, sizeof(a.ttsLang), s);
+  }
+
+  if (strcmp(aPrev.ttsLang, a.ttsLang) != 0) {
+    if (ttsManifestRemove())
+      Serial.println(F("Web: tts_manifest dipadam — tts_lang berubah"));
   }
 
   applyAudioRuntimeConfig(a.volume, a.ttsLang);
@@ -292,6 +323,10 @@ static inline void clockWebHandlePostAnnounce(WebServer &srv) {
     if (p > 60) p = 60;
     an.nextPrayerPeriodMin = p;
   }
+  if (!doc["quarter_hour_beep"].isNull())
+    an.quarterHourBeep = doc["quarter_hour_beep"].as<bool>();
+  if (!doc["hourly_bell"].isNull())
+    an.hourlyBell = doc["hourly_bell"].as<bool>();
 
   JsonArray psIn = doc["prayer_slots"].as<JsonArray>();
   if (!psIn.isNull()) {
@@ -542,6 +577,52 @@ static inline void clockWebHandleReboot(WebServer &srv) {
   clockWebRebootSoon = true;
   clockWebSendJson(srv, 200, "{\"ok\":true,\"reboot\":true}");
 }
+
+// GET /api/cache/status — kemajuan jana semula cache TTS
+static inline void clockWebHandleCacheStatus(WebServer &srv) {
+  JsonDocument doc;
+  switch (audioStorageKind()) {
+  case AUDIO_STORAGE_SD_CARD:
+    doc["storage"] = "sd";
+    break;
+  case AUDIO_STORAGE_W25Q128_PENDING:
+    doc["storage"] = "w25q_pending";
+    break;
+  default:
+    doc["storage"] = "none";
+    break;
+  }
+  doc["active"] = ttsCacheRebuildActive();
+  int d = 0, t = 0;
+  char last[48] = {};
+  ttsCacheRebuildProgress(&d, &t, last, sizeof(last));
+  doc["done"] = d;
+  doc["total"] = t;
+  doc["last_slot"] = last;
+  String out;
+  serializeJson(doc, out);
+  clockWebSendJson(srv, 200, out);
+}
+
+// POST /api/action/cache_regen — mula jana semula (perlukan SD + WiFi STA)
+static inline void clockWebHandleCacheRegen(WebServer &srv) {
+  ConfigAnnounce an = getAnnounceConfig();
+  ConfigAudio    aud = getAudioConfig();
+  bool ok = ttsCacheRebuildStart(an, aud);
+  JsonDocument rd;
+  rd["ok"] = ok;
+  if (!ok) {
+    if (!externalAudioReady())
+      rd["err"] = "tiada_sd";
+    else if (WiFi.status() != WL_CONNECTED)
+      rd["err"] = "tiada_wifi";
+    else
+      rd["err"] = "gagal_mula";
+  }
+  String out;
+  serializeJson(rd, out);
+  clockWebSendJson(srv, ok ? 200 : 400, out);
+}
 // ================================================================
 // HANDLER: List semua file dalam SPIFFS
 // GET /api/files → {files: [{path, size}, ...], used, total}
@@ -738,6 +819,11 @@ inline void clockWebServerBegin() {
   s.on("/api/action/reboot", HTTP_POST, [&s]() { clockWebHandleReboot(s); });
   s.on("/api/action/upload_takwim", HTTP_POST,
        [&s]() { clockWebHandleUploadTakwim(s); });
+
+  s.on("/api/cache/status", HTTP_GET,
+       [&s]() { clockWebHandleCacheStatus(s); });
+  s.on("/api/action/cache_regen", HTTP_POST,
+       [&s]() { clockWebHandleCacheRegen(s); });
 
   // File browser
   s.on("/api/files", HTTP_GET, [&s]() { clockWebHandleFiles(s); });

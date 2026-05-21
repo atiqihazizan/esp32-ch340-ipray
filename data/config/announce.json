@@ -4,6 +4,8 @@
   "every_minute": false,
   "every_quarter": true,
   "next_prayer_period_min": 5,
+  "quarter_hour_beep": false,
+  "hourly_bell": true,
   "prayer_slots": [
     {
       "announce": "It is now Soobooh prayer time",

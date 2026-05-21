@@ -3,6 +3,7 @@
 
 #include "core/AudioModule.h"
 #include "esp_task_wdt.h"
+#include <FS.h>
 #include <SPIFFS.h>
 #include <math.h>
 
@@ -192,6 +193,62 @@ static void _removeOldWav(const char *path) {
 void beepDouble() { enqueueSpeech("/b2.wav"); }
 void beepPrayer() { enqueueSpeech("/ba.wav"); }
 void beepWarning() { enqueueSpeech("/b3.wav"); }
+
+// Loceng jam penuh — WAV pada storan luaran /ann/sys/bell_hour.wav
+// Nada tunggal ~450ms @ 900 Hz (lebih rendah daripada beep amaran)
+#define BELL_HOUR_FREQ 900
+#define BELL_HOUR_MS   450
+
+template <typename W>
+static void _sineMsFreq(W &f, int ms, int freqHz) {
+  int n = BEEP_SR * ms / 1000;
+  int fade = BEEP_SR * 8 / 1000;
+  if (fade > n / 2) fade = n / 2;
+  for (int i = 0; i < n; i++) {
+    if ((i & 0x3FF) == 0) {
+      esp_task_wdt_reset();
+      yield();
+    }
+    float env = 1.0f;
+    if (i < fade) env = (float)i / fade;
+    else if (i >= n - fade) env = (float)(n - i) / fade;
+    int16_t s = (int16_t)(env * BEEP_AMP *
+                          sin(2.0 * M_PI * freqHz * i / BEEP_SR));
+    f.write((uint8_t *)&s, 2);
+  }
+}
+
+// Jana bell_hour.wav pada fs (SD) jika belum ada; path relatif contoh /ann/sys/bell_hour.wav
+template <typename W>
+static void _makeBellWavFs(W &f, int ms, int freqHz) {
+  int padMs = 200;
+  uint32_t dataBytes =
+      (uint32_t)((ms + padMs) * BEEP_SR / 1000) * 2;
+  _wavHdr(f, dataBytes);
+  _sineMsFreq(f, ms, freqHz);
+  int nZ = BEEP_SR * padMs / 1000;
+  int16_t z = 0;
+  for (int i = 0; i < nZ; i++) {
+    if ((i & 0x3FF) == 0) {
+      esp_task_wdt_reset();
+      yield();
+    }
+    f.write((uint8_t *)&z, 2);
+  }
+}
+
+inline void ensureBellHourWavFs(fs::FS &fs, const char *relPath) {
+  if (fs.exists(relPath))
+    return;
+  File f = fs.open(relPath, "w", true);
+  if (!f) {
+    Serial.printf("Beep: gagal jana %s\n", relPath);
+    return;
+  }
+  _makeBellWavFs(f, BELL_HOUR_MS, BELL_HOUR_FREQ);
+  f.close();
+  Serial.printf("Beep: %s siap (loceng jam)\n", relPath);
+}
 
 // ================================================================
 // INIT — WAV dalam SPIFFS sahaja
