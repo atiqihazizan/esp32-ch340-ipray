@@ -46,6 +46,12 @@ static inline void clockWebSendJson(WebServer &srv, int code,
   srv.send(code, "application/json; charset=utf-8", json);
 }
 
+// Fail sensitif — kredensial; tidak boleh dibaca/ditulis melalui
+// file browser umum. Pengeditan WiFi hanya melalui POST /api/config/wifi.
+static inline bool clockWebPathSensitif(const String &path) {
+  return path.endsWith("/wifi.json");
+}
+
 // Lepaskan handle SPIFFS audio sebelum apa-apa tulis JSON / SPIFFS lain
 static inline void clockWebSebelumSimpanSpi() {
   stopAndFlushAudio();
@@ -686,6 +692,13 @@ static inline void clockWebHandleGetFile(WebServer &srv) {
     return;
   }
 
+  // SECURITY: halang baca fail kredensial
+  if (clockWebPathSensitif(path)) {
+    srv.send(403, "text/plain; charset=utf-8",
+             "fail sensitif — tidak dibenarkan dibaca");
+    return;
+  }
+
   if (!SPIFFS.exists(path)) {
     srv.send(404, "text/plain; charset=utf-8", "fail tidak wujud");
     return;
@@ -744,6 +757,13 @@ static inline void clockWebHandlePutFile(WebServer &srv) {
   if (!path.startsWith("/config/") || !path.endsWith(".json")) {
     clockWebSendJson(srv, 403,
                      "{\"ok\":false,\"err\":\"hanya_/config/*.json\"}");
+    return;
+  }
+
+  // SECURITY: halang tulis fail kredensial melalui editor umum
+  if (clockWebPathSensitif(path)) {
+    clockWebSendJson(srv, 403,
+                     "{\"ok\":false,\"err\":\"fail_sensitif\"}");
     return;
   }
 

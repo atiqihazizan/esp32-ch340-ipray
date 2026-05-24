@@ -75,6 +75,7 @@ static void announceBootDateTimeRtc() {
 // ================================================================
 void setup() {
   Serial.begin(115200);
+  Serial.setTimeout(30);   // elak loop tergantung pada readStringUntil
   delay(200);
   Serial.println(F("\n=== BOOT ==="));
 

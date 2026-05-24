@@ -22,13 +22,18 @@ char activeTtsLang[12] = {0};
 
 static QueueHandle_t ttsQueue = nullptr;
 
+// Penanda permintaan henti — ditetapkan oleh core lain,
+// tetapi DILAYAN hanya di dalam AudioLoopTask (core 0).
+static volatile bool audioStopRequested = false;
+
 void enqueueSpeech(const char *text) {
   if (!ttsQueue || !text)
     return;
   char buf[TTS_TEXT_LEN];
   strncpy(buf, text, TTS_TEXT_LEN - 1);
   buf[TTS_TEXT_LEN - 1] = '\0';
-  xQueueSend(ttsQueue, buf, 0);
+  if (xQueueSend(ttsQueue, buf, 0) != pdTRUE)
+    Serial.printf("Audio: ttsQueue penuh — item digugurkan: %s\n", buf);
 }
 
 // Cuba main MP3 cache storan luaran mengikut id + teks sumber (hash).
@@ -57,13 +62,15 @@ bool enqueueCachedOrSpeech(const char *cacheId, const char *text) {
 
 // ================================================================
 // Hentikan audio yang sedang main + kosongkan queue.
-// Guna sebelum beep KEUTAMAAN (cth. waktu masuk solat)
-// supaya beep tidak tertunggu warning TTS yang masih main.
+// Guna sebelum beep KEUTAMAAN (cth. waktu masuk solat).
+// NOTA: audio.stopSong() TIDAK dipanggil di sini — objek `audio`
+// hanya selamat disentuh dalam AudioLoopTask. Hantar permintaan sahaja.
+// xQueueReset() kekal selamat kerana queue FreeRTOS direka rentas-core.
 // ================================================================
 void stopAndFlushAudio() {
-  audio.stopSong(); // hentikan stream/fail semasa
+  audioStopRequested = true;
   if (ttsQueue)
-    xQueueReset(ttsQueue); // buang yang masih dalam queue
+    xQueueReset(ttsQueue);
   audioStatus = "IDLE";
 }
 
@@ -77,11 +84,18 @@ static inline void copyTtsLangBuf(const char *src) {
 }
 
 // ================================================================
-// TASK CORE 0 — route ikut prefix
+// TASK CORE 0 — route ikut prefix; satu-satunya tempat objek `audio`
+// disentuh secara berterusan.
 // ================================================================
 void AudioLoopTask(void *pvParameters) {
   char ttsText[TTS_TEXT_LEN];
   for (;;) {
+    // ── Layan permintaan henti — DI SINI SAHAJA audio.stopSong() dipanggil ──
+    if (audioStopRequested) {
+      audioStopRequested = false;
+      audio.stopSong();
+    }
+
     // Hanya ambil item baru dari queue bila audio TIDAK sedang main
     if (!audio.isRunning()) {
       if (xQueueReceive(ttsQueue, ttsText, 0) == pdTRUE) {
@@ -93,13 +107,25 @@ void AudioLoopTask(void *pvParameters) {
             audio.connecttoFS(*efs, ttsText + 2);
           else
             Serial.println(F("Audio: x: tiada storan luaran"));
+
+        // ── /path = SPIFFS (beep WAV) ──
         } else if (ttsText[0] == '/') {
           audio.connecttoFS(SPIFFS, ttsText);
+
+        // ── teks = Google TTS (perlukan WiFi) ──
         } else {
           if (WiFi.status() == WL_CONNECTED) {
-            audio.connecttospeech(ttsText, activeTtsLang);
+            // connecttospeech() boleh gagal walaupun ada WiFi (timeout Google)
+            if (!audio.connecttospeech(ttsText, activeTtsLang)) {
+              Serial.printf("Audio: connecttospeech gagal: %s\n", ttsText);
+              if (SPIFFS.exists("/b3.wav"))
+                audio.connecttoFS(SPIFFS, "/b3.wav");   // nada sandaran
+            }
           } else {
-            Serial.printf("Audio: skip TTS (no WiFi): %s\n", ttsText);
+            // jangan gugur senyap — main nada amaran tempatan
+            Serial.printf("Audio: TTS tak dapat main (no WiFi): %s\n", ttsText);
+            if (SPIFFS.exists("/b3.wav"))
+              audio.connecttoFS(SPIFFS, "/b3.wav");
           }
         }
       }
