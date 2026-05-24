@@ -181,14 +181,14 @@ void loop() {
 
 
 
-  if (!Serial.available()) return;
+  if (Serial.available()){
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    cmd.toUpperCase();
 
-  String cmd = Serial.readStringUntil('\n');
-  cmd.trim();
-  cmd.toUpperCase();
-
-  if (cmd == "DOUBLEBEEP")        beepDouble();
-  else if (cmd == "PRAYERBEEP")   beepPrayer();
-  else if (cmd == "WARNINGBEEP")   beepWarning();
-  else if (cmd.length() > 0) Serial.println("Arahan: DOUBLEBEEP | PRAYERBEEP | WARNINGBEEP");
+    if (cmd == "DOUBLEBEEP")        beepDouble();
+    else if (cmd == "PRAYERBEEP")   beepPrayer();
+    else if (cmd == "WARNINGBEEP")   beepWarning();
+    else if (cmd.length() > 0) Serial.println("Arahan: DOUBLEBEEP | PRAYERBEEP | WARNINGBEEP");
+  }
 }
