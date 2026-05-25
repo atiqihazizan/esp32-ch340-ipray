@@ -114,6 +114,13 @@ Integrasi masa boot: WiFi daripada `wifi.json`; `applyAudioRuntimeConfig` + `act
 
 **Global reboot:** pembolehubah `clockWebRebootSoon` (definisi `main.cpp`) — selepas **`POST`** Wi-Fi / reboot, `ESP.restart()` selepas beberapa kitaran loop.
 
+## Boot & storan luaran (2026-05-25 — disahkan hardware)
+
+- **Hang boot** pernah berlaku selepas mesej SD gagal: punca utama **`flash.begin()` probe W25Q** bila chip **belum dipasang**. Lalai `AUDIO_STORAGE_PROBE_W25Q=0` dalam `AudioStorageModule.h` / `config.example.h`; hidupkan `1` dalam `config.h` hanya selepas W25Q dipasang.
+- **`initDisplay()`** mesti dipanggil dalam `setup()` **sebelum** `initTime()` (`Wire.begin` untuk OLED + RTC).
+- Boot OK ditanda serial: `Storan: W25Q — probe dilangkau` → `RTC: OK` → WiFi/mDNS → takwim → `Web: pelayan HTTP :80`.
+- Rincian penuh: `history-development/2026-05-25-pembetulan-boot-dan-firmware.md`.
+
 ## Constraints
 
 - **DO NOT** add Bluetooth/BLE (too large)

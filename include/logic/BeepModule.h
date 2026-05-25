@@ -279,7 +279,7 @@ void initBeeps() {
 
   _makeWavSet("/b2.wav", 70, 50, 0, 1);
   _makeWavSet("/ba.wav", 60, 50, 1700, 8);
-  _makeWavSet("/b3.wav", 60, 50, 1700, 3);
+  _makeWavSet("/b3.wav", 60, 50, 1700, 2);
 
   Serial.println(F("Boot beep..."));
   // beepDouble();

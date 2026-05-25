@@ -85,6 +85,7 @@ void setup() {
   }
 
   initAudioStorage();
+  initDisplay();      // WAJIB sebelum initTime() — Wire.begin() untuk bas I2C
   initTime();
 
   showSplashLogo(2000);
@@ -180,16 +181,32 @@ void loop() {
 
   delay(10);
 
+  // Arahan ujian beep — baca aksara demi aksara (elak timeout 30 ms pecahkan taipan)
+  static String serialCmdLine;
+  while (Serial.available() > 0) {
+    char c = (char)Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (serialCmdLine.length() == 0)
+        continue;
+      String cmd = serialCmdLine;
+      serialCmdLine = "";
+      cmd.trim();
+      cmd.toUpperCase();
 
-
-  if (Serial.available()){
-    String cmd = Serial.readStringUntil('\n');
-    cmd.trim();
-    cmd.toUpperCase();
-
-    if (cmd == "DOUBLEBEEP")        beepDouble();
-    else if (cmd == "PRAYERBEEP")   beepPrayer();
-    else if (cmd == "WARNINGBEEP")   beepWarning();
-    else if (cmd.length() > 0) Serial.println("Arahan: DOUBLEBEEP | PRAYERBEEP | WARNINGBEEP");
+      if (cmd == "DOUBLEBEEP") {
+        beepDouble();
+        Serial.println(F("OK: DOUBLEBEEP"));
+      } else if (cmd == "PRAYERBEEP") {
+        beepPrayer();
+        Serial.println(F("OK: PRAYERBEEP"));
+      } else if (cmd == "WARNINGBEEP") {
+        beepWarning();
+        Serial.println(F("OK: WARNINGBEEP"));
+      } else {
+        Serial.println(F("Arahan: DOUBLEBEEP | PRAYERBEEP | WARNINGBEEP"));
+      }
+    } else if (serialCmdLine.length() < 40) {
+      serialCmdLine += c;
+    }
   }
 }

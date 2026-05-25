@@ -27,6 +27,12 @@
 #define SD_MISO     FLASH_MISO
 #define SD_MOSI     FLASH_MOSI
 
+// W25Q128 belum dipasang → 0 (elak flash.begin() hang pada boot).
+// Set 1 selepas chip dipasang dan wiring CS/SPI disahkan.
+#ifndef AUDIO_STORAGE_PROBE_W25Q
+#define AUDIO_STORAGE_PROBE_W25Q 0
+#endif
+
 // OLED (I2C)
 #define SCREEN_WIDTH   128
 #define SCREEN_HEIGHT   64

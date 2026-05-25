@@ -9,7 +9,14 @@
 #include <FS.h>
 #include <SD.h>
 #include <SPI.h>
+
+#ifndef AUDIO_STORAGE_PROBE_W25Q
+#define AUDIO_STORAGE_PROBE_W25Q 0
+#endif
+
+#if AUDIO_STORAGE_PROBE_W25Q
 #include <SPIMemory.h>
+#endif
 
 enum AudioStorageKind : uint8_t {
   AUDIO_STORAGE_NONE = 0,
@@ -20,6 +27,7 @@ enum AudioStorageKind : uint8_t {
 static AudioStorageKind g_audioStorageKind = AUDIO_STORAGE_NONE;
 static SPIClass        *g_sdSpi = nullptr;
 
+#if AUDIO_STORAGE_PROBE_W25Q
 // Cuba kesan W25Q128 pada CS FLASH (kongsi VSPI dengan SD). Tiada mount FS —
 // penanda sahaja untuk Fasa E (glue LittleFS/FAT atas raw flash).
 static inline void audioStorageProbeW25q128() {
@@ -36,7 +44,9 @@ static inline void audioStorageProbeW25q128() {
       "Storan: W25Q dikesan JEDEC=0x%06lX, kap=%lu bait (cache FS belum — "
       "guna microSD)\n",
       (unsigned long)jedec, (unsigned long)cap);
+  g_audioStorageKind = AUDIO_STORAGE_W25Q128_PENDING;
 }
+#endif
 
 static inline bool initAudioStorage() {
   g_audioStorageKind = AUDIO_STORAGE_NONE;
@@ -54,11 +64,16 @@ static inline bool initAudioStorage() {
   }
   Serial.println(F("Storan: SD kad tidak dikesan atau gagal mount"));
 
+#if AUDIO_STORAGE_PROBE_W25Q
   audioStorageProbeW25q128();
+  if (g_audioStorageKind == AUDIO_STORAGE_W25Q128_PENDING) {
+    Serial.println(F(
+        "Storan: W25Q128 — tiada mount FS untuk cache (guna microSD untuk Tier 4)"));
+  }
+#else
   Serial.println(F(
-      "Storan: W25Q128 — tiada mount FS untuk cache (guna microSD untuk Tier 4)"));
-
-  g_audioStorageKind = AUDIO_STORAGE_W25Q128_PENDING;
+      "Storan: W25Q — probe dilangkau (chip belum dipasang; AUDIO_STORAGE_PROBE_W25Q=1 bila siap)"));
+#endif
 
   return false;
 }
