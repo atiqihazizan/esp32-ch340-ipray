@@ -2,6 +2,7 @@
 #define ANNOUNCE_MODULE_H
 
 #include "Audio.h"
+#include "BeepModule.h"
 #include "core/AudioModule.h" // enqueueSpeech(), stopAndFlushAudio()
 #include "logic/BeepModule.h" // beepPrayer(), beepDouble(), beepWarning()
 #include "data/ConfigModule.h"
@@ -251,6 +252,7 @@ bool processPrayerSchedule(int h, int m, int totalSec,
     if (wBefore > 0 && lastWarnKey != entryKey) {
       int warnSec = targetSec - wBefore;
       if (led >= warnSec && led <= warnSec + 2) {
+        beepWarning();                          // ← beep amaran (3 bip)
         char buf[100];
         buildWarningText(buf, sizeof(buf), prayers[i].announce, tH, tM, wBefore);
         char warnId[24];
@@ -383,8 +385,7 @@ void runAnnounceModule(DateTime now) {
           enqueueSpeech(qq);
         }
       }
-      if (externalAudioReady() && announceQuarterHourBeep &&
-          (advM % 15 == 0) && advM != 0) {
+      if (announceQuarterHourBeep && (advM % 15 == 0) && advM != 0) {
         beepDouble();
       }
       char buf[64];
