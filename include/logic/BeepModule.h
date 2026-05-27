@@ -23,8 +23,10 @@
 //   2600 Hz dah optimal — JANGAN tukar lagi tinggi.
 //
 #define BEEP_SR 16000  // sample rate (Hz)
-#define BEEP_FREQ 2600 // frekuensi (Hz)
-#define BEEP_AMP 30000 // amplitud (max 32767)
+// #define BEEP_FREQ 2600 // frekuensi (Hz)
+#define BEEP_FREQ 2800 // frekuensi (Hz)
+// #define BEEP_AMP 30000 // amplitud (max 32767)
+#define BEEP_AMP 32767 // amplitud (max 32767)
 
 // ── REGENERATE FLAG ──
 //   1 = sentiasa padam & jana semula (development — apply parameter baru)
@@ -277,9 +279,9 @@ void initBeeps() {
     _makeWav("/b1.wav", b, s, 1);
   }
 
-  _makeWavSet("/b2.wav", 70, 50, 0, 1);
-  _makeWavSet("/ba.wav", 60, 50, 1700, 8);
-  _makeWavSet("/b3.wav", 60, 50, 1700, 2);
+  _makeWavSet("/b2.wav", 50, 40, 0, 1);
+  _makeWavSet("/ba.wav", 50, 40, 1700, 8);
+  _makeWavSet("/b3.wav", 50, 40, 1700, 3);
 
   Serial.println(F("Boot beep..."));
   // beepDouble();

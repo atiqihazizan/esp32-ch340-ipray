@@ -106,6 +106,62 @@ pre {
 code { font-size: 12px; color: #adf; }
 .p { color: #aaa; font-size: 13px; line-height: 1.4; }
 
+.ann-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0 16px;
+  font-size: 13px;
+}
+.ann-table th,
+.ann-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2a2a2a;
+  vertical-align: middle;
+}
+.ann-table th {
+  background: #1a1a1a;
+  color: #9ab;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.ann-table tr.group-header td {
+  background: #161616;
+  color: #6cf;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #333;
+}
+.ann-table td.chk-cell {
+  width: 40px;
+  text-align: center;
+}
+.ann-table td.chk-cell input {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
+.ann-table td.name-cell {
+  width: 30%;
+  color: #eee;
+  font-weight: 500;
+}
+.ann-table td.desc-cell {
+  color: #999;
+  font-size: 12px;
+}
+.ann-table code {
+  background: #222;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #cd9;
+  font-size: 11px;
+}
+
 /* ---------- Mobile ---------- */
 @media (max-width: 600px) {
   .app { grid-template-columns: 150px 1fr; }
@@ -192,12 +248,62 @@ code { font-size: 12px; color: #adf; }
     <!-- ---------- ANNOUNCEMENTS ---------- -->
     <div class="page" id="page-announce">
       <h2>Announcements</h2>
-      <label><input id="annp" type="checkbox" class="chk">Prayer times</label>
-      <label><input id="annc" type="checkbox" class="chk">Custom schedule</label>
-      <label><input id="annm" type="checkbox" class="chk">Every minute</label>
-      <label><input id="annq" type="checkbox" class="chk">Quarter-hour</label>
-      <label><input id="annqh" type="checkbox" class="chk">Quarter beep (:15 :30 :45, beepDouble)</label>
-      <label><input id="annhb" type="checkbox" class="chk">Hourly bell (:00, WAV pada SD)</label>
+      
+      <table class="ann-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Setting</th>
+            <th>Pencetus / Bunyi</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Kumpulan: Jadual berasaskan waktu -->
+          <tr class="group-header">
+            <td colspan="3">Jadual</td>
+          </tr>
+          <tr>
+            <td class="chk-cell"><input id="annp" type="checkbox" class="chk"></td>
+            <td class="name-cell">Prayer times</td>
+            <td class="desc-cell">Beep + TTS pada waktu solat (dari takwim)</td>
+          </tr>
+          <tr>
+            <td class="chk-cell"><input id="annc" type="checkbox" class="chk"></td>
+            <td class="name-cell">Custom schedule</td>
+            <td class="desc-cell">Beep + TTS pada waktu yang ditetapkan pengguna</td>
+          </tr>
+      
+          <!-- Kumpulan: Pengumuman TTS berkala -->
+          <tr class="group-header">
+            <td colspan="3">Pengumuman TTS Berkala</td>
+          </tr>
+          <tr>
+            <td class="chk-cell"><input id="annm" type="checkbox" class="chk"></td>
+            <td class="name-cell">Every minute</td>
+            <td class="desc-cell">TTS setiap minit (contoh: <code>"It's 3 17"</code>)</td>
+          </tr>
+          <tr>
+            <td class="chk-cell"><input id="annq" type="checkbox" class="chk"></td>
+            <td class="name-cell">Quarter-hour</td>
+            <td class="desc-cell">TTS pada <code>:00</code> <code>:15</code> <code>:30</code> <code>:45</code></td>
+          </tr>
+      
+          <!-- Kumpulan: Beep penanda waktu -->
+          <tr class="group-header">
+            <td colspan="3">Beep Penanda Waktu</td>
+          </tr>
+          <tr>
+            <td class="chk-cell"><input id="annhb" type="checkbox" class="chk"></td>
+            <td class="name-cell">Hourly beep</td>
+            <td class="desc-cell"><code>beepDouble</code> pada <code>:00</code> (jam tepat)</td>
+          </tr>
+          <tr>
+            <td class="chk-cell"><input id="annqh" type="checkbox" class="chk"></td>
+            <td class="name-cell">Quarter beep</td>
+            <td class="desc-cell"><code>beepDouble</code> pada <code>:15</code> <code>:30</code> <code>:45</code></td>
+          </tr>
+        </tbody>
+      </table>
 
       <p class="sub">Prayer — TTS phrase &amp; warning lead (seconds before adhan; 0 = off)</p>
       <div id="prayerSlotsMount"></div>

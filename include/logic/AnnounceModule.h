@@ -361,13 +361,22 @@ void runAnnounceModule(DateTime now) {
 
   bool played = false;
 
+  // ----------------------------------------------------------------
+  // 1) Jadual SOLAT — keutamaan tertinggi
+  // ----------------------------------------------------------------
   if (announcePrayer)
     played = processPrayerSchedule(h, m, totSec, lastKeyPrayer, lastWarnPrayer);
 
+  // ----------------------------------------------------------------
+  // 2) Jadual KHAS — hanya jika tiada solat dimainkan
+  // ----------------------------------------------------------------
   if (!played && announceCustom && customScheduleRtCount > 0)
     played = processSchedule(customScheduleRt, customScheduleRtCount, h, m,
                              totSec, lastKeyCustom, lastWarnCustom);
 
+  // ----------------------------------------------------------------
+  // 3) Pengumuman per-minit / suku jam — hanya jika (1) dan (2) tak main
+  // ----------------------------------------------------------------
   int vt = ledSecondsToday(totSec);
   const int advSlot = vt / 60;
   const int advH    = vt / 3600;
@@ -375,24 +384,28 @@ void runAnnounceModule(DateTime now) {
 
   if (!played && advSlot != lastKeyPerMin) {
     if ((announceEveryQuarter && (advM % 15 == 0)) || announceEveryMinute) {
-      if (externalAudioReady() && announceHourlyBell && advM == 0) {
-        char bp[80];
-        ttsCacheRelPathBell(bp, sizeof(bp));
-        fs::FS *ef = externalAudioFs();
-        if (ef && ef->exists(bp)) {
-          char qq[TTS_TEXT_LEN];
-          snprintf(qq, sizeof(qq), "x:%s", bp);
-          enqueueSpeech(qq);
-        }
+
+      // ---- Beep jam penuh (minit 0 sahaja) --------------------------
+      // Gunakan beepDouble buat masa ini; boleh tukar ke beepHourly()
+      // pada masa depan tanpa menyentuh logik di sini.
+      if (announceHourlyBell && advM == 0) {
+        beepDouble();
       }
+
+      // ---- Beep suku jam (minit 15, 30, 45 sahaja) ------------------
+      // Syarat `advM != 0` elak bertindih dengan beep jam penuh di atas
+      // bila kedua-dua toggle dihidupkan.
       if (announceQuarterHourBeep && (advM % 15 == 0) && advM != 0) {
         beepDouble();
       }
+
+      // ---- Sebutan TTS waktu ----------------------------------------
       char buf[64];
       buildTimeText(buf, sizeof(buf), advH, advM);
       char clkId[24];
       snprintf(clkId, sizeof(clkId), "clk_%02d_%02d", advH, advM);
       enqueueCachedOrSpeech(clkId, buf);
+
       lastKeyPerMin = advSlot;
       played = true;
     }
